@@ -497,7 +497,8 @@ public class GridReduceQueryExecutor {
 
             final String space = cctx.name();
 
-            final QueryRun r = new QueryRun(h2.connectionForSpace(space), qry.mapQueries().size(), qry.pageSize());
+            final QueryRun r = new QueryRun(h2.connectionForSpace(space), qry.mapQueries().size(), qry.pageSize(),
+                System.currentTimeMillis(), cancel);
 
             AffinityTopologyVersion topVer = h2.readyTopologyVersion();
 
@@ -1318,6 +1319,12 @@ public class GridReduceQueryExecutor {
         /** */
         private final int pageSize;
 
+        /** */
+        private final long start;
+
+        /** */
+        private final GridQueryCancel cancel;
+
         /** Can be either CacheException in case of error or AffinityTopologyVersion to retry if needed. */
         private final AtomicReference<Object> state = new AtomicReference<>();
 
@@ -1325,11 +1332,14 @@ public class GridReduceQueryExecutor {
          * @param conn Connection.
          * @param idxsCnt Number of indexes.
          * @param pageSize Page size.
+         * @param start Start time.
          */
-        private QueryRun(Connection conn, int idxsCnt, int pageSize) {
+        private QueryRun(Connection conn, int idxsCnt, int pageSize, long start, GridQueryCancel cancel) {
             this.conn = (JdbcConnection)conn;
             this.idxs = new ArrayList<>(idxsCnt);
             this.pageSize = pageSize > 0 ? pageSize : GridCacheTwoStepQuery.DFLT_PAGE_SIZE;
+            this.start = start;
+            this.cancel = cancel;
         }
 
         /**
