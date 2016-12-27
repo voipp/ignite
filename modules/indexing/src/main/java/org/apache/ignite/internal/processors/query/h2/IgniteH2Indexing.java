@@ -3147,6 +3147,11 @@ public class IgniteH2Indexing implements GridQueryIndexing {
     }
 
     /** {@inheritDoc} */
+    @Override public Collection<String> longRunningQueries(long duration) {
+        return null;
+    }
+
+    /** {@inheritDoc} */
     @Override public void cancelAllQueries() {
         for (Connection conn : conns)
             U.close(conn, log);
