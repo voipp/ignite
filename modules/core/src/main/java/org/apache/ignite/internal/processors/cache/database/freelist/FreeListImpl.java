@@ -115,18 +115,20 @@ public class FreeListImpl extends PagesList implements FreeList, ReuseList {
 
                 assert oldFreeSpace > 0 : oldFreeSpace;
 
+                assert ((DataPageIO) iox).isEmpty(pageAddr);
+
                 // If the full row does not fit into this page write only a fragment.
                 written = (written == 0 && oldFreeSpace >= rowSize) ? addRow(page, pageAddr, io, row, rowSize):
                     addRowFragment(page, pageAddr, io, row, written, rowSize);
 
-                // Reread free space after update.
-                int newFreeSpace = io.getFreeSpace(pageAddr);
-
-                if (newFreeSpace > MIN_PAGE_FREE_SPACE) {
-                    int bucket = bucket(newFreeSpace, false);
-
-                    put(null, page, pageAddr, bucket);
-                }
+//                // Reread free space after update.
+//                int newFreeSpace = io.getFreeSpace(pageAddr);
+//
+//                if (newFreeSpace > MIN_PAGE_FREE_SPACE) {
+//                    int bucket = bucket(newFreeSpace, false);
+//
+//                    put(null, page, pageAddr, bucket);
+//                }
 
                 // Avoid boxing with garbage generation for usual case.
                 return written == rowSize ? COMPLETE : written;
@@ -221,6 +223,8 @@ public class FreeListImpl extends PagesList implements FreeList, ReuseList {
 
             long nextLink = io.removeRow(pageAddr, itemId, pageSize());
 
+            assert io.isEmpty(pageAddr);
+
             if (isWalDeltaRecordNeeded(wal, page))
                 wal.log(new DataPageRemoveRecord(cacheId, page.id(), itemId));
 
@@ -237,17 +241,18 @@ public class FreeListImpl extends PagesList implements FreeList, ReuseList {
             if (newFreeSpace > MIN_PAGE_FREE_SPACE) {
                 int newBucket = bucket(newFreeSpace, false);
 
-                if (oldFreeSpace > MIN_PAGE_FREE_SPACE) {
-                    int oldBucket = bucket(oldFreeSpace, false);
-
-                    if (oldBucket != newBucket) {
-                        // It is possible that page was concurrently taken for put, in this case put will handle bucket change.
-                        if (removeDataPage(page, pageAddr, io, oldBucket))
-                            put(null, page, pageAddr, newBucket);
-                    }
-                }
-                else
-                    put(null, page, pageAddr, newBucket);
+                put(null, page, pageAddr, newBucket);
+//                if (oldFreeSpace > MIN_PAGE_FREE_SPACE) {
+//                    int oldBucket = bucket(oldFreeSpace, false);
+//
+//                    if (oldBucket != newBucket) {
+//                        // It is possible that page was concurrently taken for put, in this case put will handle bucket change.
+//                        if (removeDataPage(page, pageAddr, io, oldBucket))
+//                            put(null, page, pageAddr, newBucket);
+//                    }
+//                }
+//                else
+//                    put(null, page, pageAddr, newBucket);
             }
 
             // For common case boxed 0L will be cached inside of Long, so no garbage will be produced.
