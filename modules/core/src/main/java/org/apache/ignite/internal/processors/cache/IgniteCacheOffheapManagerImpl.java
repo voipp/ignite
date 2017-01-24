@@ -60,6 +60,7 @@ import org.apache.ignite.internal.util.GridAtomicLong;
 import org.apache.ignite.internal.util.GridCloseableIteratorAdapter;
 import org.apache.ignite.internal.util.GridEmptyCloseableIterator;
 import org.apache.ignite.internal.util.GridSpinBusyLock;
+import org.apache.ignite.internal.util.GridUnsafe;
 import org.apache.ignite.internal.util.lang.GridCloseableIterator;
 import org.apache.ignite.internal.util.lang.GridCursor;
 import org.apache.ignite.internal.util.lang.GridIterator;
@@ -1357,7 +1358,21 @@ public class IgniteCacheOffheapManagerImpl extends GridCacheManagerAdapter imple
 
                         addr += 5; // Skip length and type byte.
 
-                        for (int i = 0; i < len; i++) {
+                        int words = len / 8;
+
+                        for (int i = 0; i < words; i++) {
+                            int off = i * 8;
+
+                            long b1 = PageUtils.getLong(addr, off);
+                            long b2 = GridUnsafe.getLong(bytes, GridUnsafe.BYTE_ARR_OFF + off);
+
+                            int cmp = Long.compare(b1, b2);
+
+                            if (cmp != 0)
+                                return cmp;
+                        }
+
+                        for (int i = words * 8; i < len; i++) {
                             byte b1 = PageUtils.getByte(addr, i);
                             byte b2 = bytes[i];
 
