@@ -1349,7 +1349,7 @@ public class IgniteCacheOffheapManagerImpl extends GridCacheManagerAdapter imple
                     if (data.nextLink() == 0) {
                         long addr = pageAddr + data.offset();
 
-                        int len = PageUtils.getInt(addr, 0);
+                        final int len = PageUtils.getInt(addr, 0);
 
                         int lenCmp = Integer.compare(len, bytes.length);
 
@@ -1358,7 +1358,7 @@ public class IgniteCacheOffheapManagerImpl extends GridCacheManagerAdapter imple
 
                         addr += 5; // Skip length and type byte.
 
-                        int words = len / 8;
+                        final int words = len / 8;
 
                         for (int i = 0; i < words; i++) {
                             int off = i * 8;
@@ -1400,7 +1400,22 @@ public class IgniteCacheOffheapManagerImpl extends GridCacheManagerAdapter imple
             if (lenCmp != 0)
                 return lenCmp;
 
-            for (int i = 0; i < bytes1.length; i++) {
+            final int len = bytes1.length;
+            final int words = len / 8;
+
+            for (int i = 0; i < words; i++) {
+                int off = GridUnsafe.BYTE_ARR_INT_OFF + i * 8;
+
+                long b1 = GridUnsafe.getLong(bytes1, off);
+                long b2 = GridUnsafe.getLong(bytes2, off);
+
+                int cmp = Long.compare(b1, b2);
+
+                if (cmp != 0)
+                    return cmp;
+            }
+
+            for (int i = words * 8; i < len; i++) {
                 byte b1 = bytes1[i];
                 byte b2 = bytes2[i];
 
