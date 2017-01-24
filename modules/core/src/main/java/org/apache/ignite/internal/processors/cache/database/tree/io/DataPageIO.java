@@ -57,16 +57,16 @@ public class DataPageIO extends PageIO {
     private static final int FREE_SPACE_OFF = FREE_LIST_PAGE_ID_OFF + 8;
 
     /** */
-    private static final int DIRECT_CNT_OFF = FREE_SPACE_OFF + 2;
+    private static final int DIRECT_CNT_OFF = FREE_SPACE_OFF + 8;
 
     /** */
-    private static final int INDIRECT_CNT_OFF = DIRECT_CNT_OFF + 1;
+    private static final int INDIRECT_CNT_OFF = DIRECT_CNT_OFF + 8;
 
     /** */
-    private static final int FIRST_ENTRY_OFF = INDIRECT_CNT_OFF + 1;
+    private static final int FIRST_ENTRY_OFF = INDIRECT_CNT_OFF + 8;
 
     /** */
-    private static final int ITEMS_OFF = FIRST_ENTRY_OFF + 2;
+    private static final int ITEMS_OFF = FIRST_ENTRY_OFF + 8;
 
     /** */
     private static final int ITEM_SIZE = 2;

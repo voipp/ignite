@@ -1483,7 +1483,7 @@ public class IgniteCacheOffheapManagerImpl extends GridCacheManagerAdapter imple
          * @param ver Page format version.
          */
         DataInnerIO(int ver) {
-            super(T_DATA_REF_INNER, ver, true, 12);
+            super(T_DATA_REF_INNER, ver, true, 16);
         }
 
         /** {@inheritDoc} */
@@ -1519,6 +1519,8 @@ public class IgniteCacheOffheapManagerImpl extends GridCacheManagerAdapter imple
 
         /** {@inheritDoc} */
         @Override public long getLink(long pageAddr, int idx) {
+            assert pageAddr % 8 == 0;
+            assert offset(idx) % 8 == 0;
             assert idx < getCount(pageAddr) : idx;
 
             return PageUtils.getLong(pageAddr, offset(idx));
@@ -1526,6 +1528,9 @@ public class IgniteCacheOffheapManagerImpl extends GridCacheManagerAdapter imple
 
         /** {@inheritDoc} */
         @Override public int getHash(long pageAddr, int idx) {
+            assert pageAddr % 8 == 0;
+            assert offset(idx) % 8 == 0;
+
             return PageUtils.getInt(pageAddr, offset(idx) + 8);
         }
     }
@@ -1543,7 +1548,7 @@ public class IgniteCacheOffheapManagerImpl extends GridCacheManagerAdapter imple
          * @param ver Page format version.
          */
         DataLeafIO(int ver) {
-            super(T_DATA_REF_LEAF, ver, 12);
+            super(T_DATA_REF_LEAF, ver, 16);
         }
 
         /** {@inheritDoc} */
@@ -1577,12 +1582,15 @@ public class IgniteCacheOffheapManagerImpl extends GridCacheManagerAdapter imple
         /** {@inheritDoc} */
         @Override public long getLink(long pageAddr, int idx) {
             assert idx < getCount(pageAddr) : idx;
+            assert offset(idx) % 8 == 0;
 
             return PageUtils.getLong(pageAddr, offset(idx));
         }
 
         /** {@inheritDoc} */
         @Override public int getHash(long pageAddr, int idx) {
+            assert offset(idx) % 8 == 0;
+
             return PageUtils.getInt(pageAddr, offset(idx) + 8);
         }
     }

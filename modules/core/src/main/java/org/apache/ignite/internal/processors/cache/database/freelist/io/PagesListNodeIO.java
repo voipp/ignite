@@ -42,7 +42,7 @@ public class PagesListNodeIO extends PageIO {
     private static final int CNT_OFF = NEXT_PAGE_ID_OFF + 8;
 
     /** */
-    private static final int PAGE_IDS_OFF = CNT_OFF + 2;
+    private static final int PAGE_IDS_OFF = CNT_OFF + 8;
 
     /**
      * @param ver  Page format version.

@@ -30,7 +30,7 @@ public abstract class BPlusIO<L> extends PageIO {
     private static final int CNT_OFF = COMMON_HEADER_END;
 
     /** */
-    private static final int FORWARD_OFF = CNT_OFF + 2;
+    private static final int FORWARD_OFF = CNT_OFF + 8;
 
     /** */
     private static final int REMOVE_ID_OFF = FORWARD_OFF + 8;

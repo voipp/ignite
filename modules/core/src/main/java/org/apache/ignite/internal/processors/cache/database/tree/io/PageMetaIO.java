@@ -47,7 +47,7 @@ public class PageMetaIO extends PageIO {
     private static final int LAST_ALLOCATED_INDEX_OFF = LAST_SUCCESSFUL_FULL_SNAPSHOT_TAG_OFF + 8;
 
     /** Candidate allocated index offset. */
-    private static final int CANDIDATE_ALLOCATED_INDEX_OFF = LAST_ALLOCATED_INDEX_OFF + 4;
+    private static final int CANDIDATE_ALLOCATED_INDEX_OFF = LAST_ALLOCATED_INDEX_OFF + 8;
 
     /** End of page meta. */
     static final int END_OF_PAGE_META = CANDIDATE_ALLOCATED_INDEX_OFF + 4;

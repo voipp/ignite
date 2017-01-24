@@ -32,7 +32,7 @@ public class PagesListMetaIO extends PageIO {
     private static final int CNT_OFF = COMMON_HEADER_END;
 
     /** */
-    private static final int NEXT_META_PAGE_OFF = CNT_OFF + 2;
+    private static final int NEXT_META_PAGE_OFF = CNT_OFF + 8;
 
     /** */
     private static final int ITEMS_OFF = NEXT_META_PAGE_OFF + 8;

@@ -80,13 +80,13 @@ public abstract class PageIO {
     public static final int TYPE_OFF = 0;
 
     /** */
-    public static final int VER_OFF = TYPE_OFF + 2;
+    public static final int VER_OFF = TYPE_OFF + 8;
 
     /** */
-    public static final int CRC_OFF = VER_OFF + 2;
+    public static final int CRC_OFF = VER_OFF + 8;
 
     /** */
-    public static final int PAGE_ID_OFF = CRC_OFF + 4;
+    public static final int PAGE_ID_OFF = CRC_OFF + 8;
 
     /** */
     private static final int RESERVED_1_OFF = PAGE_ID_OFF + 8;
@@ -178,6 +178,8 @@ public abstract class PageIO {
      * @return Page type.
      */
     public static int getType(long pageAddr) {
+        assert pageAddr % 8 == 0;
+
         return PageUtils.getShort(pageAddr, TYPE_OFF) & 0xFFFF;
     }
 
@@ -230,6 +232,8 @@ public abstract class PageIO {
      * @return Page ID.
      */
     public static long getPageId(long pageAddr) {
+        assert pageAddr % 8 == 0;
+
         return PageUtils.getLong(pageAddr, PAGE_ID_OFF);
     }
 
