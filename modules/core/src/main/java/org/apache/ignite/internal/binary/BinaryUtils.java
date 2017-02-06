@@ -65,8 +65,8 @@ import org.apache.ignite.lang.IgniteUuid;
 import org.jetbrains.annotations.Nullable;
 import org.jsr166.ConcurrentHashMap8;
 
-import static org.apache.ignite.IgniteSystemProperties.IGNITE_BINARY_MARSHALLER_USE_STRING_SERIALIZATION_VER_2;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.ignite.IgniteSystemProperties.IGNITE_BINARY_MARSHALLER_USE_STRING_SERIALIZATION_VER_2;
 
 /**
  * Binary utils.
@@ -1797,7 +1797,7 @@ public class BinaryUtils {
                 return doReadTimestampArray(in);
 
             case GridBinaryMarshaller.OBJ_ARR:
-                return doReadObjectArray(in, ctx, ldr, handles, false);
+                return doReadObjectArray(in, ctx, ldr, handles, true);
 
             case GridBinaryMarshaller.COL:
                 return doReadCollection(in, ctx, ldr, handles, false, null);
@@ -1843,7 +1843,7 @@ public class BinaryUtils {
 
         int len = in.readInt();
 
-        Object[] arr = deserialize ? (Object[])Array.newInstance(compType, len) : new Object[len];
+        Object[] arr = (Object[])Array.newInstance(compType, len);
 
         handles.setHandle(arr, hPos);
 
