@@ -1825,6 +1825,8 @@ public class BinaryMarshallerSelfTest extends GridCommonAbstractTest {
         assertNull(map2.get(ctx.userTypeName(Value.class.getName())));
     }
 
+
+
     /**
      * @throws Exception If failed.
      */

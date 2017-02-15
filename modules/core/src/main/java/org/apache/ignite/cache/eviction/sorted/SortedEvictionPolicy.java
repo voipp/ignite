@@ -29,8 +29,8 @@ import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.ignite.cache.eviction.AbstractEvictionPolicy;
 import org.apache.ignite.cache.eviction.EvictableEntry;
-import org.apache.ignite.cache.eviction.EvictionPolicy;
 import org.apache.ignite.internal.util.GridConcurrentSkipListSet;
 import org.apache.ignite.internal.util.typedef.internal.A;
 import org.jetbrains.annotations.Nullable;
@@ -59,21 +59,9 @@ import static org.apache.ignite.configuration.CacheConfiguration.DFLT_CACHE_SIZE
  * <p>
  * User defined comparator should implement {@link Serializable} interface.
  */
-public class SortedEvictionPolicy<K, V> implements EvictionPolicy<K, V>, SortedEvictionPolicyMBean, Externalizable {
+public final class SortedEvictionPolicy<K, V> extends AbstractEvictionPolicy<K, V> implements SortedEvictionPolicyMBean, Externalizable {
     /** */
     private static final long serialVersionUID = 0L;
-
-    /** Maximum size. */
-    private volatile int max = DFLT_CACHE_SIZE;
-
-    /** Batch size. */
-    private volatile int batchSize = 1;
-
-    /** Max memory size. */
-    private volatile long maxMemSize;
-
-    /** Memory size. */
-    private final LongAdder8 memSize = new LongAdder8();
 
     /** Comparator. */
     private Comparator<Holder<K, V>> comp;
@@ -118,11 +106,8 @@ public class SortedEvictionPolicy<K, V> implements EvictionPolicy<K, V>, SortedE
      * @param comp Entries comparator.
      */
     public SortedEvictionPolicy(int max, int batchSize, @Nullable Comparator<EvictableEntry<K, V>> comp) {
-        A.ensure(max >= 0, "max >= 0");
-        A.ensure(batchSize > 0, "batchSize > 0");
-
-        this.max = max;
-        this.batchSize = batchSize;
+        setMaxSize(max);
+        setBatchSize(batchSize);
         this.comp = comp == null ? new DefaultHolderComparator<K, V>() : new HolderComparator<>(comp);
         this.set = new GridConcurrentSkipListSetEx<>(this.comp);
     }
@@ -171,7 +156,7 @@ public class SortedEvictionPolicy<K, V> implements EvictionPolicy<K, V>, SortedE
 
     /** {@inheritDoc} */
     @Override public int getCurrentSize() {
-        return set.sizex();
+        return getContainerSize();
     }
 
     /** {@inheritDoc} */
@@ -205,31 +190,11 @@ public class SortedEvictionPolicy<K, V> implements EvictionPolicy<K, V>, SortedE
         return Collections.unmodifiableCollection(cp);
     }
 
-    /** {@inheritDoc} */
-    @Override public void onEntryAccessed(boolean rmv, EvictableEntry<K, V> entry) {
-        if (!rmv) {
-            if (!entry.isCached())
-                return;
-
-            if (touch(entry))
-                shrink();
-        }
-        else {
-            Holder<K, V> holder = entry.removeMeta();
-
-            if (holder != null) {
-                removeHolder(holder);
-
-                memSize.add(-entry.size());
-            }
-        }
-    }
-
     /**
      * @param entry Entry to touch.
      * @return {@code True} if backed queue has been changed by this call.
      */
-    private boolean touch(EvictableEntry<K, V> entry) {
+    @Override protected boolean touch(EvictableEntry<K, V> entry) {
         Holder<K, V> holder = entry.meta();
 
         // Entry has not been added yet to backed queue.
@@ -245,12 +210,12 @@ public class SortedEvictionPolicy<K, V> implements EvictionPolicy<K, V>, SortedE
                 if (holder.order > 0) {
                     if (!entry.isCached()) {
                         // Was concurrently evicted, need to remove it from queue.
-                        removeHolder(holder);
+                        removeMeta(holder);
 
                         return false;
                     }
 
-                    memSize.add(entry.size());
+                    addToMemorySize(entry.size());
 
                     return true;
                 }
@@ -264,38 +229,8 @@ public class SortedEvictionPolicy<K, V> implements EvictionPolicy<K, V>, SortedE
         return false;
     }
 
-    /**
-     * Shrinks backed queue to maximum allowed size.
-     */
-    private void shrink() {
-        long maxMem = this.maxMemSize;
-
-        if (maxMem > 0) {
-            long startMemSize = memSize.longValue();
-
-            if (startMemSize >= maxMem)
-                for (long i = maxMem; i < startMemSize && memSize.longValue() > maxMem;) {
-                    int size = shrink0();
-
-                    if (size == -1)
-                        break;
-
-                    i += size;
-                }
-        }
-
-        int max = this.max;
-
-        if (max > 0) {
-            int startSize = set.sizex();
-
-            if (startSize >= max + (maxMem > 0 ? 1 : this.batchSize)) {
-                for (int i = max; i < startSize && set.sizex() > max; i++) {
-                    if (shrink0() == -1)
-                        break;
-                }
-            }
-        }
+    @Override protected int getContainerSize() {
+        return set.sizex();
     }
 
     /**
@@ -303,7 +238,7 @@ public class SortedEvictionPolicy<K, V> implements EvictionPolicy<K, V>, SortedE
      *
      * @return number of bytes that was free. {@code -1} if queue is empty.
      */
-    private int shrink0() {
+    @Override protected int shrink0() {
         Holder<K, V> h = set.pollFirst();
 
         if (h == null)
@@ -313,10 +248,10 @@ public class SortedEvictionPolicy<K, V> implements EvictionPolicy<K, V>, SortedE
 
         EvictableEntry<K, V> entry = h.entry;
 
-        if (h.order > 0 && entry.removeMeta(h)) {
+        if (entry != null && h.order > 0 && entry.removeMeta(h)) {
             size = entry.size();
 
-            memSize.add(-size);
+            addToMemorySize(-size);
 
             if (!entry.evict())
                 touch(entry);
@@ -345,15 +280,16 @@ public class SortedEvictionPolicy<K, V> implements EvictionPolicy<K, V>, SortedE
     /**
      * Removes holder from backed queue and marks holder as removed.
      *
-     * @param holder Holder.
+     * @param meta Holder.
      */
-    private void removeHolder(Holder<K, V> holder) {
+    @Override protected boolean removeMeta(Object meta) {
+        Holder<K, V> holder = (Holder<K, V>)meta;
         long order0 = holder.order;
 
         if (order0 > 0)
             holder.order = -order0;
 
-        set.remove(holder);
+        return set.remove(holder);
     }
 
     /**

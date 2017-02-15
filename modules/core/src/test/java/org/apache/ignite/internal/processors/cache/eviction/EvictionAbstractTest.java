@@ -1056,7 +1056,7 @@ public abstract class EvictionAbstractTest<T extends EvictionPolicy<?, ?>>
         @Override public void onEntryAccessed(boolean rmv, EvictableEntry entry) {
             try {
                 plc.getClass()
-                    .getDeclaredMethod("onEntryAccessed", boolean.class, EvictableEntry.class)
+                    .getMethod("onEntryAccessed", boolean.class, EvictableEntry.class)
                     .invoke(plc, rmv, entry);
             }
             catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException e) {
