@@ -46,6 +46,11 @@ import org.apache.ignite.transactions.TransactionIsolation;
 import org.apache.ignite.transactions.TransactionState;
 import org.jetbrains.annotations.Nullable;
 
+import javax.cache.Cache;
+import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.LinkedBlockingQueue;
+
 /**
  * Abstract cache store test.
  */
@@ -575,6 +580,10 @@ public abstract class GridAbstractCacheStoreSelfTest<T extends CacheStore<Object
         /** {@inheritDoc} */
         @Override public void rollback() {
             // No-op.
+        }
+
+        @Override
+        public void stop() {
         }
 
         /** {@inheritDoc} */

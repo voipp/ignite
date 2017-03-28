@@ -25,6 +25,8 @@ import org.apache.ignite.internal.processors.cache.distributed.dht.GridDhtTopolo
 import org.apache.ignite.internal.util.future.GridFutureAdapter;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
+
 import static org.apache.ignite.cache.CacheWriteSynchronizationMode.FULL_ASYNC;
 
 /**
@@ -99,6 +101,12 @@ public abstract class IgniteTxRemoteStateAdapter implements IgniteTxRemoteState 
 
     /** {@inheritDoc} */
     @Nullable @Override public GridCacheContext singleCacheContext(GridCacheSharedContext cctx) {
+        return null;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public List<GridCacheContext> cacheContexts(GridCacheSharedContext cctx) {
         return null;
     }
 

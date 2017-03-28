@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.processors.cache.transactions;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.ignite.IgniteCheckedException;
@@ -55,6 +56,13 @@ public interface IgniteTxState {
      * @return cctx Non-null cache context if tx has only one active cache.
      */
     @Nullable public GridCacheContext singleCacheContext(GridCacheSharedContext cctx);
+
+    /**
+     * extract cache contexts from shared context
+     * @param cctx
+     * @return
+     */
+    List<GridCacheContext> cacheContexts(GridCacheSharedContext cctx);
 
     /**
      * @param cctx Awaits for previous async operations on active caches to be completed.

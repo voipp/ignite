@@ -333,6 +333,11 @@ public class TransactionProxyImpl<K, V> implements TransactionProxy, Externaliza
         }
     }
 
+    /** {@inheritDoc} */
+    @Override public void stop() {
+        tx.state(TransactionState.STOPPED);
+    }
+
     /**
      * @param res Result to convert to finished future.
      */
@@ -376,5 +381,13 @@ public class TransactionProxyImpl<K, V> implements TransactionProxy, Externaliza
     /** {@inheritDoc} */
     @Override public String toString() {
         return S.toString(TransactionProxyImpl.class, this);
+    }
+
+    /**
+     * updating context
+     * @param cctx
+     */
+    public void bindToCurrentThread(GridCacheSharedContext<K, V> cctx) {
+        this.cctx = cctx;
     }
 }

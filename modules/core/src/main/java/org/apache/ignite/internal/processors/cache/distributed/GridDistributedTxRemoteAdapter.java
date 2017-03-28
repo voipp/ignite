@@ -175,6 +175,11 @@ public abstract class GridDistributedTxRemoteAdapter extends IgniteTxAdapter
     }
 
     /** {@inheritDoc} */
+    @Override public void setTxState(Object state) {
+        this.txState = (IgniteTxRemoteState) state;
+    }
+
+    /** {@inheritDoc} */
     @Override public UUID eventNodeId() {
         return nodeId;
     }

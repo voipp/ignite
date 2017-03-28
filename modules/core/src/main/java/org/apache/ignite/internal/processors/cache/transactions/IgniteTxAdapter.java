@@ -89,13 +89,7 @@ import static org.apache.ignite.transactions.TransactionConcurrency.PESSIMISTIC;
 import static org.apache.ignite.transactions.TransactionIsolation.READ_COMMITTED;
 import static org.apache.ignite.transactions.TransactionIsolation.REPEATABLE_READ;
 import static org.apache.ignite.transactions.TransactionIsolation.SERIALIZABLE;
-import static org.apache.ignite.transactions.TransactionState.ACTIVE;
-import static org.apache.ignite.transactions.TransactionState.COMMITTING;
-import static org.apache.ignite.transactions.TransactionState.MARKED_ROLLBACK;
-import static org.apache.ignite.transactions.TransactionState.PREPARED;
-import static org.apache.ignite.transactions.TransactionState.PREPARING;
-import static org.apache.ignite.transactions.TransactionState.ROLLED_BACK;
-import static org.apache.ignite.transactions.TransactionState.ROLLING_BACK;
+import static org.apache.ignite.transactions.TransactionState.*;
 
 /**
  * Managed transaction adapter.
@@ -971,7 +965,7 @@ public abstract class IgniteTxAdapter extends GridMetadataAwareAdapter implement
 
             switch (state) {
                 case ACTIVE: {
-                    valid = false;
+                    valid = prev == STOPPED;
 
                     break;
                 } // Active is initial state and cannot be transitioned to.
@@ -1029,6 +1023,11 @@ public abstract class IgniteTxAdapter extends GridMetadataAwareAdapter implement
                         prev == ACTIVE || prev == MARKED_ROLLBACK || prev == PREPARING ||
                             prev == PREPARED || (prev == COMMITTING && local() && !dht());
 
+                    break;
+                }
+
+                case STOPPED: {
+                    valid = prev == ACTIVE;
                     break;
                 }
             }
@@ -1984,6 +1983,11 @@ public abstract class IgniteTxAdapter extends GridMetadataAwareAdapter implement
         /** {@inheritDoc} */
         @Override public IgniteTxState txState() {
             return null;
+        }
+
+        @Override
+        public void setTxState(Object state) {
+            throw new IllegalStateException("Deserialized transaction can only be used as read-only.");
         }
 
         /** {@inheritDoc} */

@@ -272,4 +272,9 @@ public interface Transaction extends AutoCloseable, IgniteAsyncSupport {
      * @throws IgniteException If rollback failed.
      */
     public IgniteFuture<Void> rollbackAsync() throws IgniteException;
+
+    /**
+     * Stops transaction, preventing it from further commit. Until it is restarted via {@link IgniteTransactions#txStart(org.apache.ignite.transactions.Transaction)}
+     */
+    void stop();
 }

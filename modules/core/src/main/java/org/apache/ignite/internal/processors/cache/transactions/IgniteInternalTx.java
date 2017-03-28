@@ -256,6 +256,12 @@ public interface IgniteInternalTx {
     public IgniteTxState txState();
 
     /**
+     * explicitly sets txState
+     * @param state
+     */
+    public void setTxState(Object state);
+
+    /**
      * @return {@code true} or {@code false} if the deployment is enabled or disabled for all active caches involved
      * in this transaction.
      */

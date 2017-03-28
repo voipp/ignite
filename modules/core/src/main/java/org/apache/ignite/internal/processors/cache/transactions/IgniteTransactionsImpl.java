@@ -31,6 +31,9 @@ import org.apache.ignite.transactions.TransactionIsolation;
 import org.apache.ignite.transactions.TransactionMetrics;
 import org.jetbrains.annotations.Nullable;
 
+import static org.apache.ignite.transactions.TransactionState.ACTIVE;
+import static org.apache.ignite.transactions.TransactionState.STOPPED;
+
 /**
  * Grid transactions implementation.
  */
@@ -193,6 +196,19 @@ public class IgniteTransactionsImpl<K, V> implements IgniteTransactionsEx {
     /** {@inheritDoc} */
     @Override public void resetMetrics() {
         cctx.resetTxMetrics();
+    }
+
+    /** {@inheritDoc} */
+    @Override public void txStart(Transaction tx) {
+        assert tx.state().equals(STOPPED) : "transaction must be stopped before being reopened";
+        TransactionProxyImpl transactionProxy = (TransactionProxyImpl) tx;
+        IgniteInternalTx internalTx = transactionProxy.tx();
+        transactionProxy.bindToCurrentThread(cctx);
+        ((IgniteTxLocalAdapter) transactionProxy.tx()).bindToCurrentThread(cctx);
+        this.cctx.tm().reopenTx(transactionProxy.tx());
+        internalTx.state(ACTIVE);
+        if (!internalTx.txState().empty())
+            ((IgniteTxLocalState) internalTx.txState()).initReadWriteViews();
     }
 
     /**

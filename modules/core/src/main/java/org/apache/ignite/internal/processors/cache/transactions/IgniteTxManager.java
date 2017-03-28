@@ -1387,7 +1387,7 @@ public class IgniteTxManager extends GridCacheSharedManagerAdapter {
     /**
      * @param tx Transaction to clear.
      */
-    private void clearThreadMap(IgniteInternalTx tx) {
+    public void clearThreadMap(IgniteInternalTx tx) {
         if (tx.local() && !tx.dht()) {
             if (!tx.system())
                 threadMap.remove(tx.threadId(), tx);
@@ -2205,6 +2205,34 @@ public class IgniteTxManager extends GridCacheSharedManagerAdapter {
         Collection<? extends IgniteInternalFuture<?>> values = deadlockDetectFuts.values();
 
         return (Collection<IgniteInternalFuture<?>>)values;
+    }
+
+    /**
+     * binding transaction to another thread
+     * @param tx
+     */
+    public void reopenTx(IgniteInternalTx tx) {
+        assert tx != null : "transaction must not be empty";
+
+        long threadId = Thread.currentThread().getId();
+
+        //transaction was started on the current node
+        if (tx.nodeId().equals(this.cctx.localNodeId())) {
+            Long oldThreadId = null;
+            for (Map.Entry<Long, IgniteInternalTx> txEntry : this.threadMap.entrySet()) {
+                if (txEntry.getValue().xid().equals(tx.xid())) {
+                    oldThreadId = txEntry.getKey();
+                    break;
+                }
+            }
+            if (oldThreadId != null && threadId != oldThreadId) {
+                threadMap.remove(oldThreadId);
+                assert !threadMap.values().contains(tx) : "transaction duplicates founded";
+                threadMap.put(threadId, tx);
+            }
+        } else {
+            threadMap.put(threadId, tx);
+        }
     }
 
     /**

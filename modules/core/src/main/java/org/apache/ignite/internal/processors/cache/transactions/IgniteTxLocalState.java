@@ -33,6 +33,11 @@ public interface IgniteTxLocalState extends IgniteTxState {
     public boolean init(int txSize);
 
     /**
+     * initialization of read and write views with latest state
+     */
+    void initReadWriteViews();
+
+    /**
      * @return {@code True} if init method was called.
      */
     public boolean initialized();

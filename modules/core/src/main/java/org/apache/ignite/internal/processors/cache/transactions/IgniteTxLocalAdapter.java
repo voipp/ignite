@@ -225,6 +225,12 @@ public abstract class IgniteTxLocalAdapter extends IgniteTxAdapter implements Ig
         return txState;
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public void setTxState(Object state) {
+        txState = (IgniteTxLocalState) state;
+    }
+
     /**
      * Creates result instance.
      */
@@ -1726,4 +1732,13 @@ public abstract class IgniteTxLocalAdapter extends IgniteTxAdapter implements Ig
          */
         protected abstract IgniteInternalFuture<T> postMiss(T t) throws IgniteCheckedException;
     }
+
+    /**
+     * updating shared context for new thread(as a result of Ioc absence)
+     * @param cctx
+     */
+    public void bindToCurrentThread(GridCacheSharedContext cctx) {
+        this.cctx = cctx;
+    }
+
 }

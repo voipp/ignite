@@ -103,4 +103,10 @@ public interface IgniteTransactions {
      * Resets transaction metrics.
      */
     public void resetMetrics();
+
+    /**
+     * restarts transaction if it was stopped lately via {@link org.apache.ignite.transactions.Transaction#stop() }
+     * @param tx transaction to restart
+     */
+    void txStart(Transaction tx);
 }

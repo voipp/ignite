@@ -17,12 +17,12 @@
 
 package org.apache.ignite.internal.processors.cache.transactions;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.io.Externalizable;
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
+import java.util.*;
+
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.cache.CacheInterceptor;
 import org.apache.ignite.cache.CacheWriteSynchronizationMode;
@@ -95,6 +95,17 @@ public class IgniteTxStateImpl extends IgniteTxLocalStateAdapter {
         }
 
         return null;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public List<GridCacheContext> cacheContexts(GridCacheSharedContext cctx) {
+
+        ArrayList<GridCacheContext> cacheContexts = new ArrayList<>();
+        for (long l : activeCacheIds.array()) {
+            cacheContexts.add(cctx.cacheContext((int) l));
+        }
+        return cacheContexts;
     }
 
     /** {@inheritDoc} */
@@ -363,6 +374,12 @@ public class IgniteTxStateImpl extends IgniteTxLocalStateAdapter {
         }
 
         return false;
+    }
+
+    /** {@inheritDoc} */
+    @Override public void initReadWriteViews() {
+        readView = new IgniteTxMap(txMap, CU.reads());
+        writeView = new IgniteTxMap(txMap, CU.writes());
     }
 
     /** {@inheritDoc} */

@@ -68,6 +68,11 @@ public class IgniteTxImplicitSingleStateImpl extends IgniteTxLocalStateAdapter {
     }
 
     /** {@inheritDoc} */
+    @Override public List<GridCacheContext> cacheContexts(GridCacheSharedContext cctx) {
+        return Collections.singletonList(cacheCtx);
+    }
+
+    /** {@inheritDoc} */
     @Nullable @Override public Integer firstCacheId() {
         return cacheCtx != null ? cacheCtx.cacheId() : null;
     }
@@ -260,6 +265,12 @@ public class IgniteTxImplicitSingleStateImpl extends IgniteTxLocalStateAdapter {
         }
 
         return false;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void initReadWriteViews() {
+        // No-op.
     }
 
     /** {@inheritDoc} */
