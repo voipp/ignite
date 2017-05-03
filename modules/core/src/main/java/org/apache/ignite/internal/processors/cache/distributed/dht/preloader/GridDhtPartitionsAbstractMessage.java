@@ -37,6 +37,9 @@ public abstract class GridDhtPartitionsAbstractMessage extends GridCacheMessage 
     protected static final byte COMPRESSED_FLAG_MASK = 1;
 
     /** */
+    protected static final byte CORRUPTED_CACHE_FLAG_MASK = 2;
+
+    /** */
     private static final long serialVersionUID = 0L;
 
     /** Exchange ID. */
@@ -111,6 +114,20 @@ public abstract class GridDhtPartitionsAbstractMessage extends GridCacheMessage 
      */
     protected final void compressed(boolean compressed) {
         flags = compressed ? (byte)(flags | COMPRESSED_FLAG_MASK) : (byte)(flags & ~COMPRESSED_FLAG_MASK);
+    }
+
+    /**
+     * @return {@code True} if message carries corrupted cache exception.
+     */
+    public final boolean corruptedCache(){
+        return (flags & CORRUPTED_CACHE_FLAG_MASK) != 0;
+    }
+
+    /**
+     * @param corrupted {@code True} if message carries corrupted cache exception.
+     */
+    protected final void corruptedCache(boolean corrupted) {
+        flags = corrupted ? (byte)(flags | CORRUPTED_CACHE_FLAG_MASK) : (byte)(flags & ~CORRUPTED_CACHE_FLAG_MASK);
     }
 
     /** {@inheritDoc} */
