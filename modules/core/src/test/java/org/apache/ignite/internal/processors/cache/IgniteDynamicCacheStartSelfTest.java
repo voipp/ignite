@@ -28,13 +28,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.cache.CacheException;
+import javax.cache.configuration.Factory;
+
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.IgniteCheckedException;
-import org.apache.ignite.cache.CacheAtomicityMode;
-import org.apache.ignite.cache.CacheExistsException;
-import org.apache.ignite.cache.CacheMode;
-import org.apache.ignite.cache.CacheWriteSynchronizationMode;
+import org.apache.ignite.cache.*;
+import org.apache.ignite.cache.store.CacheStore;
 import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.configuration.IgniteConfiguration;
@@ -49,11 +49,13 @@ import org.apache.ignite.internal.util.typedef.F;
 import org.apache.ignite.internal.util.typedef.G;
 import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.lang.IgnitePredicate;
+import org.apache.ignite.resources.IgniteInstanceResource;
 import org.apache.ignite.spi.discovery.tcp.TcpDiscoverySpi;
 import org.apache.ignite.spi.discovery.tcp.ipfinder.TcpDiscoveryIpFinder;
 import org.apache.ignite.spi.discovery.tcp.ipfinder.vm.TcpDiscoveryVmIpFinder;
 import org.apache.ignite.testframework.GridTestUtils;
 import org.apache.ignite.testframework.junits.common.GridCommonAbstractTest;
+import org.junit.Assert;
 
 /**
  * Test for dynamic cache start.
@@ -1335,5 +1337,71 @@ public class IgniteDynamicCacheStartSelfTest extends GridCommonAbstractTest {
         }, nodeCount(), "start-stop-cache");
 
         fut.get();
+    }
+
+
+    /**
+     *
+     */
+    public void testBrokenStoreFactory() {
+        final CacheConfiguration<Integer, String> cacheConfiguration = new CacheConfiguration<>();
+
+        cacheConfiguration.setName(DYNAMIC_CACHE_NAME);
+        cacheConfiguration.setCacheStoreFactory(new BrokenStoreFactory());
+        GridTestUtils.assertThrows(log, new Callable<Object>() {
+            @Override public Object call() throws Exception {
+                grid(0).createCache(cacheConfiguration);
+                return null;
+            }
+        }, CacheCreationException.class, null);
+
+        for (int i = 0; i < nodeCount(); i++) {
+            Assert.assertNull(grid(i).cache(DYNAMIC_CACHE_NAME));
+        }
+    }
+
+    /**
+     *
+     */
+    public void testBrokenStoreFactoryOnCertainNode() throws InterruptedException {
+        final CacheConfiguration<Integer, String> cacheConfiguration = new CacheConfiguration<>();
+
+        cacheConfiguration.setName(DYNAMIC_CACHE_NAME);
+        BrokenStoreFactory storeFactory = new BrokenStoreFactory();
+        BrokenStoreFactory.gridName = ignite(1).name();
+        storeFactory.flag = false;
+        cacheConfiguration.setCacheStoreFactory(storeFactory);
+
+        GridTestUtils.assertThrows(log, new Callable<Object>() {
+            @Override public Object call() throws Exception {
+                grid(0).createCache(cacheConfiguration);
+                return null;
+            }
+        }, CacheCreationException.class, null);
+        for (int i = 0; i < nodeCount(); i++) {
+            Assert.assertNull(grid(i).cache(DYNAMIC_CACHE_NAME));
+        }
+        storeFactory.flag = true;
+    }
+
+    /**
+     *
+     */
+    private static class BrokenStoreFactory implements Factory<CacheStore<Integer, String>> {
+
+        @IgniteInstanceResource
+        private Ignite ignite;
+
+        public boolean flag = true;
+
+        public static String gridName;
+
+        /** {@inheritDoc} */
+        @Override public CacheStore<Integer, String> create() {
+            if(flag || ignite.name().equals(gridName)) {
+                throw new RuntimeException("This store factory is broken");
+            }
+            else return null;
+        }
     }
 }

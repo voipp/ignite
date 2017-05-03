@@ -43,6 +43,7 @@ import javax.management.JMException;
 import javax.management.MBeanServer;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteException;
+import org.apache.ignite.cache.CacheCreationException;
 import org.apache.ignite.cache.CacheExistsException;
 import org.apache.ignite.cache.CacheMode;
 import org.apache.ignite.cache.CacheRebalanceMode;
@@ -224,6 +225,17 @@ public class GridCacheProcessor extends GridProcessorAdapter {
         internalCaches = new HashSet<>();
 
         marsh = MarshallerUtils.jdkMarshaller(ctx.igniteInstanceName());
+    }
+
+    /**
+     * withdraw cache locally due to corruption
+     * @param cacheName
+     * @return
+     */
+    public DynamicCacheDescriptor withdrawCache(String cacheName){
+        caches.remove(cacheName);
+        jCacheProxies.remove(cacheName);
+        return registeredCaches.remove(cacheName);
     }
 
     /**
@@ -883,7 +895,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
                     CachePluginManager pluginMgr = desc.pluginManager();
 
                     GridCacheContext ctx = createCache(
-                        ccfg, pluginMgr, desc.cacheType(), cacheObjCtx, desc.updatesAllowed());
+                        ccfg, pluginMgr, desc.cacheType(), cacheObjCtx, desc.updatesAllowed(), desc.receivedFrom());
 
                     ctx.dynamicDeploymentId(desc.deploymentId());
 
@@ -1435,14 +1447,15 @@ public class GridCacheProcessor extends GridProcessorAdapter {
      * @param cacheType Cache type.
      * @param cacheObjCtx Cache object context.
      * @param updatesAllowed Updates allowed flag.
+     * @param initiatingNodeId
      * @return Cache context.
      * @throws IgniteCheckedException If failed to create cache.
      */
     private GridCacheContext createCache(CacheConfiguration<?, ?> cfg,
-        @Nullable CachePluginManager pluginMgr,
-        CacheType cacheType,
-        CacheObjectContext cacheObjCtx,
-        boolean updatesAllowed)
+                                         @Nullable CachePluginManager pluginMgr,
+                                         CacheType cacheType,
+                                         CacheObjectContext cacheObjCtx,
+                                         boolean updatesAllowed, UUID initiatingNodeId)
         throws IgniteCheckedException {
         assert cfg != null;
 
@@ -1455,7 +1468,12 @@ public class GridCacheProcessor extends GridProcessorAdapter {
         else
             prepare(cfg, cfg.getCacheStoreFactory(), false);
 
-        CacheStore cfgStore = cfg.getCacheStoreFactory() != null ? cfg.getCacheStoreFactory().create() : null;
+        CacheStore cfgStore;
+        try {
+            cfgStore = cfg.getCacheStoreFactory() != null ? cfg.getCacheStoreFactory().create() : null;
+        }catch (Throwable e){
+            throw new CacheCreationException(e, cfg.getName(), initiatingNodeId, cfg.getNodeFilter());
+        }
 
         QueryUtils.prepareCacheConfiguration(cfg);
 
@@ -1928,7 +1946,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
 
             CacheObjectContext cacheObjCtx = ctx.cacheObjects().contextForCache(ccfg);
 
-            GridCacheContext cacheCtx = createCache(ccfg, null, cacheType, cacheObjCtx, true);
+            GridCacheContext cacheCtx = createCache(ccfg, null, cacheType, cacheObjCtx, true, initiatingNodeId);
 
             cacheCtx.startTopologyVersion(topVer);
 
@@ -2026,7 +2044,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
             }
         }
 
-        if (!F.isEmpty(reqs) && err == null) {
+        if (!F.isEmpty(reqs)) {
             for (DynamicCacheChangeRequest req : reqs) {
                 String masked = req.cacheName();
 
@@ -2052,6 +2070,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
                         }
                     }
                 }
+                completeStartFuture(req, err);
             }
         }
     }
@@ -2060,14 +2079,21 @@ public class GridCacheProcessor extends GridProcessorAdapter {
      * @param req Request to complete future for.
      */
     public void completeStartFuture(DynamicCacheChangeRequest req) {
+        completeStartFuture(req, null);
+    }
+
+    /**
+     * @param req Request to complete future for.
+     */
+    public void completeStartFuture(DynamicCacheChangeRequest req, Throwable err) {
         DynamicCacheStartFuture fut = (DynamicCacheStartFuture)pendingFuts.get(req.requestId());
 
         assert req.deploymentId() != null || req.globalStateChange() || req.resetLostPartitions();
         assert fut == null || fut.deploymentId != null || req.globalStateChange() || req.resetLostPartitions();
 
         if (fut != null && F.eq(fut.deploymentId(), req.deploymentId()) &&
-            F.eq(req.initiatingNodeId(), ctx.localNodeId()))
-            fut.onDone();
+                F.eq(req.initiatingNodeId(), ctx.localNodeId()))
+            fut.onDone(err);
     }
 
     /**
