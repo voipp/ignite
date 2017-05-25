@@ -76,6 +76,7 @@ import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.transactions.TransactionConcurrency;
 import org.apache.ignite.transactions.TransactionIsolation;
 import org.apache.ignite.transactions.TransactionState;
+import static org.apache.ignite.transactions.TransactionState.STOPPED;
 import org.jetbrains.annotations.Nullable;
 
 import static org.apache.ignite.events.EventType.EVT_CACHE_OBJECT_READ;
@@ -972,7 +973,7 @@ public abstract class IgniteTxAdapter extends GridMetadataAwareAdapter implement
 
             switch (state) {
                 case ACTIVE: {
-                    valid = false;
+                    valid = prev == STOPPED;
 
                     break;
                 } // Active is initial state and cannot be transitioned to.
@@ -1030,6 +1031,11 @@ public abstract class IgniteTxAdapter extends GridMetadataAwareAdapter implement
                         prev == ACTIVE || prev == MARKED_ROLLBACK || prev == PREPARING ||
                             prev == PREPARED || (prev == COMMITTING && local() && !dht());
 
+                    break;
+                }
+
+                case STOPPED: {
+                    valid = prev == ACTIVE;
                     break;
                 }
             }

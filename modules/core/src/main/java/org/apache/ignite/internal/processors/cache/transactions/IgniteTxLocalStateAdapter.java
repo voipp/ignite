@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.processors.cache.transactions;
 
+import java.util.UUID;
 import org.apache.ignite.internal.processors.cache.GridCacheContext;
 import org.apache.ignite.internal.util.typedef.internal.U;
 
@@ -37,5 +38,10 @@ public abstract class IgniteTxLocalStateAdapter implements IgniteTxLocalState {
             else
                 cacheCtx.cache().metrics0().onTxRollback((U.currentTimeMillis() - tx.startTime()) * 1000);
         }
+    }
+
+    /** {@inheritDoc} */
+    @Override public void updateOwnersThreadIds(long oldThreadId, UUID uuid) {
+        //NO-OP
     }
 }

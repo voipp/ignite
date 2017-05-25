@@ -94,6 +94,8 @@ import org.apache.ignite.plugin.security.SecurityPermission;
 import org.apache.ignite.transactions.TransactionConcurrency;
 import org.apache.ignite.transactions.TransactionIsolation;
 import org.apache.ignite.transactions.TransactionState;
+import static org.apache.ignite.transactions.TransactionState.ACTIVE;
+import static org.apache.ignite.transactions.TransactionState.STOPPED;
 import org.jetbrains.annotations.Nullable;
 
 import static org.apache.ignite.events.EventType.EVT_CACHE_OBJECT_READ;
@@ -3984,6 +3986,25 @@ public class GridNearTxLocal extends GridDhtTxLocalAdapter implements AutoClosea
          * @throws IgniteCheckedException If failed.
          */
         abstract T finish(T t) throws IgniteCheckedException;
+    }
+
+    /**
+     * Stops transaction. It could be resumed later
+     */
+    public void stop() {
+        state(TransactionState.STOPPED);
+    }
+
+    /**
+     * Resume transaction(possibly in another thread) if it was previously stopped
+     */
+    public void resume() {
+        assert state().equals(STOPPED) : "transaction must be stopped before being resumed";
+        this.cctx.tm().reopenTx(this);
+        if (pessimistic())
+            txState().updateOwnersThreadIds(threadId, this.cctx.localNodeId());
+        threadId = Thread.currentThread().getId();
+        state(ACTIVE);
     }
 
     /** {@inheritDoc} */

@@ -671,6 +671,13 @@ public class GridCacheMvccCandidate implements Externalizable,
     }
 
     /**
+     * updates candidate's thread id. Used in transaction resuming
+     */
+    public void updateThreadId() {
+        this.threadId = Thread.currentThread().getId();
+    }
+
+    /**
      * Mask.
      */
     @SuppressWarnings({"PackageVisibleInnerClass"})
