@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.cache.CacheInterceptor;
 import org.apache.ignite.cache.CacheWriteSynchronizationMode;
@@ -31,6 +32,9 @@ import org.apache.ignite.internal.cluster.ClusterTopologyServerNotFoundException
 import org.apache.ignite.internal.managers.discovery.DiscoCache;
 import org.apache.ignite.internal.processors.affinity.AffinityTopologyVersion;
 import org.apache.ignite.internal.processors.cache.GridCacheContext;
+import org.apache.ignite.internal.processors.cache.GridCacheEntryEx;
+import org.apache.ignite.internal.processors.cache.GridCacheEntryRemovedException;
+import org.apache.ignite.internal.processors.cache.GridCacheMvccCandidate;
 import org.apache.ignite.internal.processors.cache.GridCacheSharedContext;
 import org.apache.ignite.internal.processors.cache.KeyCacheObject;
 import org.apache.ignite.internal.processors.cache.distributed.dht.GridDhtTopologyFuture;
@@ -489,6 +493,25 @@ public class IgniteTxStateImpl extends IgniteTxLocalStateAdapter {
         }
 
         return false;
+    }
+
+    /** {@inheritDoc} */
+    @Override public void updateOwnersThreadIds(long oldThreadId, UUID uuid) {
+        try {
+            for (IgniteTxEntry igniteTxEntry : txMap.values()) {
+                //igniteTxEntry.locked() - false when entry is locked. Possibly bug?
+                GridCacheEntryEx cached = igniteTxEntry.cached();
+                if (cached != null && !cached.obsolete()) {
+                    GridCacheMvccCandidate candidate = null;
+                    candidate = cached.candidate(uuid, oldThreadId);
+                    if (candidate != null) {
+                        candidate.updateThreadId();
+                    }
+                }
+            }
+        } catch (GridCacheEntryRemovedException e) {
+            //ignore
+        }
     }
 
     /** {@inheritDoc} */

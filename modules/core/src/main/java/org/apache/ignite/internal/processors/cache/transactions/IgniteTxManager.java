@@ -2209,6 +2209,19 @@ public class IgniteTxManager extends GridCacheSharedManagerAdapter {
         return (Collection<IgniteInternalFuture<?>>)values;
     }
 
+    public void reopenTx(IgniteInternalTx tx) {
+        assert tx != null : "transaction must not be empty";
+
+        //transaction was started on the current node
+        if (tx.nodeId().equals(this.cctx.localNodeId())) {
+            assert threadMap.remove(tx.threadId(), tx);
+            assert !threadMap.values().contains(tx) : "transaction duplicates founded";
+            threadMap.put(Thread.currentThread().getId(), tx);
+        } else {
+            throw new UnsupportedOperationException("resuming transaction in another is node not supported");
+        }
+    }
+
     /**
      * Timeout object for node failure handler.
      */

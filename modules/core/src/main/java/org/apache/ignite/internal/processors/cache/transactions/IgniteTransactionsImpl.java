@@ -31,6 +31,9 @@ import org.apache.ignite.transactions.TransactionMetrics;
 import org.apache.ignite.transactions.TransactionException;
 import org.jetbrains.annotations.Nullable;
 
+import static org.apache.ignite.transactions.TransactionState.ACTIVE;
+import static org.apache.ignite.transactions.TransactionState.STOPPED;
+
 /**
  * Grid transactions implementation.
  */

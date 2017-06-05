@@ -333,6 +333,16 @@ public class TransactionProxyImpl<K, V> implements TransactionProxy, Externaliza
         }
     }
 
+    /** {@inheritDoc} */
+    @Override public void stop() {
+        tx().stop();
+    }
+
+    /** {@inheritDoc} */
+    @Override public void resume() {
+        tx().resume();
+    }
+
     /**
      * @param res Result to convert to finished future.
      */

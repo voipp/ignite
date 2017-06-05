@@ -103,4 +103,5 @@ public interface IgniteTransactions {
      * Resets transaction metrics.
      */
     public void resetMetrics();
+
 }

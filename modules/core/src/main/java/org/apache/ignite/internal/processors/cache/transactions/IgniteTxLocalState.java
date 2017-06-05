@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.processors.cache.transactions;
 
+import java.util.UUID;
 import org.apache.ignite.internal.processors.affinity.AffinityTopologyVersion;
 import org.apache.ignite.internal.processors.cache.GridCacheSharedContext;
 
@@ -51,4 +52,11 @@ public interface IgniteTxLocalState extends IgniteTxState {
      * @return {@code True} if tx has cache with created near cache.
      */
     public boolean hasNearCacheConfigured(GridCacheSharedContext ctx, AffinityTopologyVersion topVer);
+
+    /**
+     * Updates owners threadId to current thread id(used in transaction resuming)
+     * @param oldThreadId owner's initial threadId
+     * @param uuid node id
+     */
+    void updateOwnersThreadIds(long oldThreadId, UUID uuid);
 }
