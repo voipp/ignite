@@ -321,4 +321,50 @@ public class GridCacheLocalLockSelfTest extends GridCommonAbstractTest {
         assert !cache.isLocalLocked(1, true);
         assert !cache.isLocalLocked(1, false);
     }
+
+    /**
+     * Test for 2 locks in 1 thread locking and trying to lock the same key.
+     */
+    public void testTwoLocksInOneThread(){
+        final IgniteCache<Integer, String> cache = ignite.cache(DEFAULT_CACHE_NAME);
+
+        Lock lock1 = cache.lock(1);
+
+        lock1.lock();
+
+        Lock lock2 = cache.lock(1);
+
+        assertTrue(lock2.tryLock());
+
+        lock1.unlock();
+
+        lock2.unlock();
+
+        assertFalse(cache.isLocalLocked(1, false));
+    }
+
+    /**
+     * Test for 2 locks in 2 threads locking and trying to lock the same key.
+     *
+     * @throws Exception If test failed.
+     */
+    public void testTwoLocksInTwoThreads() throws Exception {
+        final IgniteCache<Integer, String> cache = ignite.cache(DEFAULT_CACHE_NAME);
+
+        Lock lock1 = cache.lock(1);
+
+        lock1.lock();
+
+        multithreaded(new Runnable() {
+            @Override public void run() {
+                Lock lock2 = cache.lock(1);
+
+                assertFalse(lock2.tryLock());
+            }
+        }, 1);
+
+        lock1.unlock();
+
+        assertFalse(cache.isLocalLocked(1, false));
+    }
 }
