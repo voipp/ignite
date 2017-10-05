@@ -23,6 +23,9 @@ import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.nio.ByteBuffer;
 import java.util.UUID;
+
+import org.apache.ignite.internal.processors.cache.GridCacheSharedContext;
+import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.plugin.extensions.communication.Message;
 import org.apache.ignite.plugin.extensions.communication.MessageReader;
@@ -60,13 +63,17 @@ public class GridCacheVersion implements Message, Comparable<GridCacheVersion>, 
         /* No-op. */
     }
 
+    public static Boolean logVersion = true;
+
     /**
      * @param topVer Topology version plus number of seconds from the start time of the first grid node.
      * @param order Version order.
      * @param nodeOrder Node order.
      * @param dataCenterId Replication data center ID.
+     * @param cctx
+     * @param needLog
      */
-    public GridCacheVersion(int topVer, long order, int nodeOrder, int dataCenterId) {
+    public GridCacheVersion(int topVer, long order, int nodeOrder, int dataCenterId, GridCacheSharedContext cctx, boolean needLog) {
         assert topVer >= 0 : topVer;
         assert order >= 0 : order;
         assert nodeOrder >= 0 : nodeOrder;
@@ -79,6 +86,10 @@ public class GridCacheVersion implements Message, Comparable<GridCacheVersion>, 
         this.order = order;
 
         nodeOrderDrId = nodeOrder | (dataCenterId << DR_ID_SHIFT);
+
+        if (logVersion && needLog)
+            U.dumpStack("[txs]Creating GridCacheVersion.topVer= " + topVer + "\n.order= " + order
+                    + ".\nloc node id= " + (cctx!=null?cctx.localNodeId().getMostSignificantBits():null));
     }
 
 
@@ -87,10 +98,13 @@ public class GridCacheVersion implements Message, Comparable<GridCacheVersion>, 
      * @param nodeOrderDrId Node order and DR ID.
      * @param order Version order.
      */
-    public GridCacheVersion(int topVer, int nodeOrderDrId, long order) {
+    public GridCacheVersion(int topVer, int nodeOrderDrId, long order, boolean shouldLog) {
         this.topVer = topVer;
         this.nodeOrderDrId = nodeOrderDrId;
         this.order = order;
+
+        if (logVersion && shouldLog)
+            U.dumpStack("[txs]Creating GridCacheVersion.topVer= " + topVer + ".\norder= " + order);
     }
 
     /**

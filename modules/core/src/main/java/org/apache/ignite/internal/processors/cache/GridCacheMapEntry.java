@@ -200,6 +200,10 @@ public abstract class GridCacheMapEntry extends GridMetadataAwareAdapter impleme
     protected void value(@Nullable CacheObject val) {
         assert Thread.holdsLock(this);
 
+        U.dumpStack("[txs]Setting value to entry." + (val!=null?val.value(cctx.cacheObjectContext(), false):null)
+        + "\n.Local node id= " + cctx.localNodeId().getMostSignificantBits()
+        );
+
         this.val = val;
     }
 
@@ -4195,7 +4199,7 @@ public abstract class GridCacheMapEntry extends GridMetadataAwareAdapter impleme
                     newVer.order(),
                     newVer.nodeOrder(),
                     newVer.dataCenterId(),
-                    conflictVer);
+                    conflictVer, cctx.shared());
             }
 
             if (op == UPDATE) {

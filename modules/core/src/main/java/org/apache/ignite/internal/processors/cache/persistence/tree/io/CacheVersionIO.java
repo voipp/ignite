@@ -191,7 +191,7 @@ public class CacheVersionIO {
                 int nodeOrderDrId = buf.getInt();
                 long order = buf.getLong();
 
-                return new GridCacheVersion(topVer, nodeOrderDrId, order);
+                return new GridCacheVersion(topVer, nodeOrderDrId, order, true);
             }
 
             case 2: {
@@ -204,7 +204,7 @@ public class CacheVersionIO {
                 long conflictOrder = buf.getLong();
 
                 return new GridCacheVersionEx(topVer, nodeOrderDrId, order,
-                    new GridCacheVersion(conflictTop, conflictNodeOrderDrId, conflictOrder));
+                    new GridCacheVersion(conflictTop, conflictNodeOrderDrId, conflictOrder, true));
             }
 
             default:
@@ -232,7 +232,7 @@ public class CacheVersionIO {
                 int nodeOrderDrId = PageUtils.getInt(pageAddr, 5);
                 long order = PageUtils.getLong(pageAddr, 9);
 
-                return new GridCacheVersion(topVer, nodeOrderDrId, order);
+                return new GridCacheVersion(topVer, nodeOrderDrId, order, true);
             }
 
             case 2: {
@@ -245,7 +245,7 @@ public class CacheVersionIO {
                 long conflictOrder = PageUtils.getLong(pageAddr, 25);
 
                 return new GridCacheVersionEx(topVer, nodeOrderDrId, order,
-                    new GridCacheVersion(conflictTop, conflictNodeOrderDrId, conflictOrder));
+                    new GridCacheVersion(conflictTop, conflictNodeOrderDrId, conflictOrder, true));
             }
 
             default:

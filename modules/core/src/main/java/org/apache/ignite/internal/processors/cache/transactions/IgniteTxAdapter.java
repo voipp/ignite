@@ -308,7 +308,9 @@ public abstract class IgniteTxAdapter extends GridMetadataAwareAdapter implement
         this.taskNameHash = taskNameHash;
 
         startVer = cctx.versions().last();
-
+        if (GridCacheVersion.logVersion)
+            U.dumpStack("[txs]Setting start version.startVer " + startVer
+                    + ".\nloc node id= " + (cctx!=null?cctx.localNodeId().getMostSignificantBits():null));
         nodeId = cctx.discovery().localNode().id();
 
         threadId = Thread.currentThread().getId();
@@ -352,6 +354,9 @@ public abstract class IgniteTxAdapter extends GridMetadataAwareAdapter implement
         this.threadId = threadId;
         this.xidVer = xidVer;
         this.startVer = startVer;
+        if (GridCacheVersion.logVersion)
+            U.dumpStack("[txs]Setting start version.startVer " + startVer
+                    + ".\nloc node id= " + (cctx!=null?cctx.localNodeId().getMostSignificantBits():null));
         this.sys = sys;
         this.plc = plc;
         this.concurrency = concurrency;
@@ -857,6 +862,9 @@ public abstract class IgniteTxAdapter extends GridMetadataAwareAdapter implement
 
             commitVer = commitVer0 = xidVer;
 
+            if (GridCacheVersion.logVersion)
+                U.dumpStack("[txs]Setting commit version.commVer " + commitVer
+                        + ".\nloc node id= " + (cctx!=null?cctx.localNodeId().getMostSignificantBits():null));
             return commitVer0;
         }
     }
@@ -878,7 +886,9 @@ public abstract class IgniteTxAdapter extends GridMetadataAwareAdapter implement
 
             if (commitVer0 != null)
                 return;
-
+            if (GridCacheVersion.logVersion)
+                U.dumpStack("[txs]Setting commit version.commVer " + commitVer
+                        + ".\nloc node id= " + (cctx!=null?cctx.localNodeId().getMostSignificantBits():null));
             this.commitVer = commitVer;
         }
     }
@@ -1138,6 +1148,9 @@ public abstract class IgniteTxAdapter extends GridMetadataAwareAdapter implement
     /** {@inheritDoc} */
     @Override public void endVersion(GridCacheVersion endVer) {
         this.endVer = endVer;
+        if (GridCacheVersion.logVersion)
+            U.dumpStack("[txs]Setting end version.endVer " + endVer
+                    + ".\nloc node id= " + (cctx!=null?cctx.localNodeId().getMostSignificantBits():null));
     }
 
     /** {@inheritDoc} */
@@ -1147,6 +1160,9 @@ public abstract class IgniteTxAdapter extends GridMetadataAwareAdapter implement
 
     /** {@inheritDoc} */
     @Override public void writeVersion(GridCacheVersion writeVer) {
+        if (GridCacheVersion.logVersion)
+            U.dumpStack("[txs]Setting write version.writeVer " + writeVer
+                    + "\n.loc node id= " + (cctx!=null?cctx.localNodeId().getMostSignificantBits():null));
         this.writeVer = writeVer;
     }
 

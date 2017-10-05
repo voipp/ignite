@@ -43,17 +43,7 @@ import org.apache.ignite.internal.managers.communication.GridMessageListener;
 import org.apache.ignite.internal.managers.eventstorage.GridLocalEventListener;
 import org.apache.ignite.internal.pagemem.wal.record.TxRecord;
 import org.apache.ignite.internal.processors.affinity.AffinityTopologyVersion;
-import org.apache.ignite.internal.processors.cache.CacheObjectsReleaseFuture;
-import org.apache.ignite.internal.processors.cache.GridCacheContext;
-import org.apache.ignite.internal.processors.cache.GridCacheEntryEx;
-import org.apache.ignite.internal.processors.cache.GridCacheEntryRemovedException;
-import org.apache.ignite.internal.processors.cache.GridCacheMapEntry;
-import org.apache.ignite.internal.processors.cache.GridCacheMessage;
-import org.apache.ignite.internal.processors.cache.GridCacheMvccCandidate;
-import org.apache.ignite.internal.processors.cache.GridCacheVersionedFuture;
-import org.apache.ignite.internal.processors.cache.GridCacheReturnCompletableWrapper;
-import org.apache.ignite.internal.processors.cache.GridCacheSharedManagerAdapter;
-import org.apache.ignite.internal.processors.cache.GridDeferredAckMessageSender;
+import org.apache.ignite.internal.processors.cache.*;
 import org.apache.ignite.internal.processors.cache.distributed.GridCacheMappedVersion;
 import org.apache.ignite.internal.processors.cache.distributed.GridCacheTxFinishSync;
 import org.apache.ignite.internal.processors.cache.distributed.GridCacheTxRecoveryFuture;
@@ -955,7 +945,7 @@ public class IgniteTxManager extends GridCacheSharedManagerAdapter {
         @Nullable GridCacheVersion nearXidVer
     ) {
         if (nearXidVer != null)
-            xidVer = new CommittedVersion(xidVer, nearXidVer);
+            xidVer = new CommittedVersion(xidVer, nearXidVer, cctx);
 
         Object committed0 = completedVersHashMap.putIfAbsent(xidVer, true);
 
@@ -983,7 +973,7 @@ public class IgniteTxManager extends GridCacheSharedManagerAdapter {
         assert retVal != null;
 
         if (nearXidVer != null)
-            xidVer = new CommittedVersion(xidVer, nearXidVer);
+            xidVer = new CommittedVersion(xidVer, nearXidVer, cctx);
 
         Object prev = completedVersHashMap.putIfAbsent(xidVer, retVal);
 
@@ -1223,6 +1213,7 @@ public class IgniteTxManager extends GridCacheSharedManagerAdapter {
             removeObsolete(tx);
 
             // 7. Assign transaction number at the end of transaction.
+
             tx.endVersion(cctx.versions().next(tx.topologyVersion()));
 
             // 8. Remove from per-thread storage.
@@ -2474,9 +2465,10 @@ public class IgniteTxManager extends GridCacheSharedManagerAdapter {
         /**
          * @param ver Committed version.
          * @param nearVer Near transaction version.
+         * @param cctx
          */
-        private CommittedVersion(GridCacheVersion ver, GridCacheVersion nearVer) {
-            super(ver.topologyVersion(), ver.order(), ver.nodeOrder(), ver.dataCenterId());
+        private CommittedVersion(GridCacheVersion ver, GridCacheVersion nearVer, GridCacheSharedContext cctx) {
+            super(ver.topologyVersion(), ver.order(), ver.nodeOrder(), ver.dataCenterId(), cctx, true);
 
             assert nearVer != null;
 

@@ -22,6 +22,8 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.nio.ByteBuffer;
+
+import org.apache.ignite.internal.processors.cache.GridCacheSharedContext;
 import org.apache.ignite.plugin.extensions.communication.MessageReader;
 import org.apache.ignite.plugin.extensions.communication.MessageWriter;
 
@@ -44,16 +46,16 @@ public class GridCacheVersionEx extends GridCacheVersion {
 
     /**
      * Constructor.
-     *
      * @param topVer Topology version.
      * @param order Order.
      * @param nodeOrder Node order.
      * @param dataCenterId Data center ID.
      * @param drVer DR version.
+     * @param cctx
      */
     public GridCacheVersionEx(int topVer, long order, int nodeOrder, byte dataCenterId,
-        GridCacheVersion drVer) {
-        super(topVer, order, nodeOrder, dataCenterId);
+                              GridCacheVersion drVer, GridCacheSharedContext cctx) {
+        super(topVer, order, nodeOrder, dataCenterId, cctx, logVersion);
 
         assert drVer != null && !(drVer instanceof GridCacheVersionEx); // DR version can only be plain here.
 
@@ -69,7 +71,7 @@ public class GridCacheVersionEx extends GridCacheVersion {
      * @param drVer DR version.
      */
     public GridCacheVersionEx(int topVer, int nodeOrderDrId, long order, GridCacheVersion drVer) {
-        super(topVer, nodeOrderDrId, order);
+        super(topVer, nodeOrderDrId, order, true);
 
         assert drVer != null && !(drVer instanceof GridCacheVersionEx); // DR version can only be plain here.
 

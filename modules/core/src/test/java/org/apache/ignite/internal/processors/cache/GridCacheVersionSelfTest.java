@@ -98,6 +98,6 @@ public class GridCacheVersionSelfTest extends GridCommonAbstractTest {
      * @return Cache version.
      */
     private GridCacheVersion version(int nodeOrder, int drId) {
-        return new GridCacheVersion(0, 0, nodeOrder, drId);
+        return new GridCacheVersion(0, 0, nodeOrder, drId, null, true);
     }
 }
