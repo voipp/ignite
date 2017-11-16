@@ -722,6 +722,7 @@ public abstract class IgniteTxAdapter extends GridMetadataAwareAdapter implement
 
     /** {@inheritDoc} */
     @Override public UUID nodeId() {
+
         return nodeId;
     }
 
