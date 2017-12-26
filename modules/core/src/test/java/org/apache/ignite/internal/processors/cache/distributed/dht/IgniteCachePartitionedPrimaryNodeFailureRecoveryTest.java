@@ -28,4 +28,22 @@ public class IgniteCachePartitionedPrimaryNodeFailureRecoveryTest
     @Override protected NearCacheConfiguration nearConfiguration() {
         return new NearCacheConfiguration();
     }
+
+    /**
+     * Test for primary node failure during prepare phase and no recovery
+     *
+     * @throws Exception If failed.
+     */
+    public void testPessimisticPrimaryNodeFailureNoRecover() throws Exception {
+        primaryNodeFailureNoRecover(true);
+    }
+
+    /**
+     * Test for primary node failure during prepare phase and no recovery
+     *
+     * @throws Exception If failed.
+     */
+    public void testOptimisticPrimaryNodeFailureNoRecover() throws Exception {
+        primaryNodeFailureNoRecover(false);
+    }
 }

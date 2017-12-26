@@ -34,4 +34,22 @@ public class IgniteCachePartitionedTwoBackupsPrimaryNodeFailureRecoveryTest
 
         return ccfg;
     }
+
+    /**
+     * Test for primary node failure during prepare phase and no recovery
+     *
+     * @throws Exception If failed.
+     */
+    public void testPessimisticPrimaryNodeFailureNoRecover() throws Exception {
+        primaryNodeFailureNoRecover(true);
+    }
+
+    /**
+     * Test for primary node failure during prepare phase and no recovery
+     *
+     * @throws Exception If failed.
+     */
+    public void testOptimisticPrimaryNodeFailureNoRecover() throws Exception {
+        primaryNodeFailureNoRecover(false);
+    }
 }

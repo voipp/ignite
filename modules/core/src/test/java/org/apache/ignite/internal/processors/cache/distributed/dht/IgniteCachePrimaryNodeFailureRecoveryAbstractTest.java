@@ -46,6 +46,7 @@ import org.apache.ignite.internal.util.lang.GridAbsPredicate;
 import org.apache.ignite.internal.util.typedef.G;
 import org.apache.ignite.internal.util.typedef.T2;
 import org.apache.ignite.internal.util.typedef.internal.U;
+import org.apache.ignite.lang.IgniteFuture;
 import org.apache.ignite.lang.IgniteInClosure;
 import org.apache.ignite.plugin.extensions.communication.Message;
 import org.apache.ignite.resources.LoggerResource;
@@ -53,6 +54,7 @@ import org.apache.ignite.spi.IgniteSpiException;
 import org.apache.ignite.spi.communication.tcp.TcpCommunicationSpi;
 import org.apache.ignite.testframework.GridTestUtils;
 import org.apache.ignite.transactions.Transaction;
+import org.apache.ignite.transactions.TransactionState;
 
 import static org.apache.ignite.cache.CacheAtomicityMode.TRANSACTIONAL;
 import static org.apache.ignite.cache.CacheMode.PARTITIONED;
@@ -422,6 +424,62 @@ public abstract class IgniteCachePrimaryNodeFailureRecoveryAbstractTest extends 
         finally {
             System.clearProperty(IGNITE_EXCHANGE_COMPATIBILITY_VER_1);
         }
+    }
+
+    /**
+     * @param optimistic If {@code true} tests optimistic transaction.
+     * @throws Exception If failed.
+     */
+    protected void primaryNodeFailureNoRecover(boolean optimistic) throws Exception {
+        IgniteCache<Integer, Integer> cache2 = jcache(2);
+
+        Affinity<Integer> aff = ignite(0).affinity(DEFAULT_CACHE_NAME);
+
+        Integer key1;
+        Integer key2 = primaryKey(cache2);
+
+        for (int key = 0;; key++) {
+            if (aff.isPrimary(ignite(1).cluster().localNode(), key)) {
+                if (aff.isBackup(ignite(0).cluster().localNode(), key)) {
+                    key1 = key;
+
+                    break;
+                }
+            }
+        }
+
+        assertNotNull(key1);
+
+        TestCommunicationSpi backupCommSpi = (TestCommunicationSpi)ignite(2).configuration().getCommunicationSpi();
+
+        backupCommSpi.blockMessages(ignite(1).cluster().localNode().id());
+
+        IgniteTransactions txs = ignite(2).transactions();
+
+        try (Transaction tx = txs.txStart(optimistic ? OPTIMISTIC : PESSIMISTIC, REPEATABLE_READ)) {
+            cache2.put(key2, key2);
+
+            cache2.put(key1, key1);
+
+            IgniteFuture<Void> commitFut = tx.commitAsync();
+
+            waitPrepared(ignite(2));
+
+            U.sleep(1000);
+
+            stopGrid(1);
+
+            GridTestUtils.waitForCondition(new GridAbsPredicate() {
+                @Override public boolean apply() {
+                    return commitFut.isDone();
+                }
+            }, 2_000);
+
+            assertEquals(TransactionState.ROLLED_BACK, tx.state());
+        }
+
+        checkKey(key1, null);
+        checkKey(key2, null);
     }
 
     /**
