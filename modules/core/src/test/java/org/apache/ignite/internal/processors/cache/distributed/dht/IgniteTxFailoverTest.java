@@ -33,7 +33,7 @@ import org.apache.ignite.transactions.TransactionIsolation;
  */
 public class IgniteTxFailoverTest extends GridCommonAbstractTest {
     /** Client. */
-    private IgniteEx client;
+    private IgniteEx originatingNode;
 
     /** Primary node. */
     private Ignite primaryNode;
@@ -75,7 +75,7 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
      *
      */
     protected int gridCount() {
-        return 3;
+        return 4;
     }
 
     /** {@inheritDoc} */
@@ -94,11 +94,20 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
         return icfg;
     }
 
+    @Override protected boolean isMultiJvm() {
+        return true;
+    }
+
     /** {@inheritDoc} */
     @Override protected void beforeTest() throws Exception {
         super.beforeTest();
 
         startGrids(gridCount());
+
+        originatingNode = grid(0);
+        primaryNode = grid(1);
+        backupNode1 = grid(2);
+        backupNode2 = grid(3);
 
         awaitPartitionMapExchange();
     }
@@ -122,7 +131,7 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
 
         switch (scenarioId) {
             case 1:/* primary hasn't received prepare when failure occured. */
-                commSpi1 = commSpi(client);
+                commSpi1 = commSpi(originatingNode);
 
                 commSpi1.blockMessage(GridNearTxPrepareRequest.class, failingNode != NODE_ROLE.ORIGINATING);
 
@@ -152,7 +161,7 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
                 commSpi2.blockMessage(GridDhtTxPrepareResponse.class, failingNode != NODE_ROLE.BOTH_BACKUPS);
 
                 break;
-            case 5:/* client hasn't received prepare finish when failure occured.*/
+            case 5:/* originatingNode hasn't received prepare finish when failure occured.*/
                 commSpi1 = commSpi(primaryNode);
 
                 commSpi1.blockMessage(GridNearTxPrepareResponse.class, failingNode != NODE_ROLE.PRIMARY);
@@ -160,7 +169,7 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
                 break;
 
             case 6:/* primary hasn't received finish request when failure occured.*/
-                commSpi1 = commSpi(client);
+                commSpi1 = commSpi(originatingNode);
 
                 commSpi1.blockMessage(GridNearTxFinishRequest.class, failingNode != NODE_ROLE.ORIGINATING);
 
@@ -190,7 +199,7 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
                 commSpi2.blockMessage(GridDhtTxFinishResponse.class, failingNode != NODE_ROLE.BOTH_BACKUPS);
 
                 break;
-            case 10:/* client hasn't received finish response when failure occured.*/
+            case 10:/* originatingNode hasn't received finish response when failure occured.*/
                 commSpi1 = commSpi(primaryNode);
 
                 commSpi1.blockMessage(GridNearTxFinishResponse.class, failingNode != NODE_ROLE.PRIMARY);
@@ -219,30 +228,19 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
      1) primary node
      2) both backups
      3) only one backup
-     4) originating node(new client will be started)
+     4) originating node(new originatingNode will be started)
      *
      * @param failingNode Failing node.
      * @param scenarioId Scenario id.
      */
     private void testNodeFailureWhileTransaction(NODE_ROLE failingNode, int scenarioId) throws Exception {
-        primaryNode = ignite(1);
-        backupNode1 = ignite(0);
-        backupNode2 = ignite(2);
-
-        IgniteConfiguration cfg = getConfiguration(getTestIgniteInstanceName(3));
-        cfg.setClientMode(true);
-
-        client = startGrid(cfg);
-
-        awaitPartitionMapExchange();
-
         //key that would be primary on grid1, and backup on grid2, grid3
         Integer key = null;
 
         for (int i = 0; i < 1000; i++) {
-            if (client.affinity(DEFAULT_CACHE_NAME).isPrimary(primaryNode.cluster().localNode(), i))
-                if (client.affinity(DEFAULT_CACHE_NAME).isBackup(backupNode1.cluster().localNode(), i))
-                    if (client.affinity(DEFAULT_CACHE_NAME).isBackup(backupNode2.cluster().localNode(), i)) {
+            if (originatingNode.affinity(DEFAULT_CACHE_NAME).isPrimary(primaryNode.cluster().localNode(), i))
+                if (originatingNode.affinity(DEFAULT_CACHE_NAME).isBackup(backupNode1.cluster().localNode(), i))
+                    if (originatingNode.affinity(DEFAULT_CACHE_NAME).isBackup(backupNode2.cluster().localNode(), i)) {
                         key = i;
 
                         break;
@@ -251,13 +249,14 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
 
         assert key != null;
 
-        IgniteCache<Object, Object> cache = client.cache(DEFAULT_CACHE_NAME);
+        IgniteCache<Object, Object> cache = originatingNode.cache(DEFAULT_CACHE_NAME);
 
         IgniteBiTuple<BlockTcpCommunicationSpi, BlockTcpCommunicationSpi> commSpi = blockMessages(scenarioId, failingNode);
 
         try {
             Integer finalKey = key;
-            IgniteEx finalClient = client;
+            IgniteEx finalClient = originatingNode;
+            // commit thread will be blocked until unblockMessage() is called
             IgniteInternalFuture<?> commitFut = multithreadedAsync(
                 new Runnable() {
                     @Override public void run() {
@@ -297,20 +296,20 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
         }
         finally {
             if (failingNode == NODE_ROLE.ORIGINATING) {
-                client = startGrid(getConfiguration(getTestIgniteInstanceName(4)).setClientMode(true));
+                originatingNode = startGrid(getConfiguration(getTestIgniteInstanceName(4)).setClientMode(true));
 
                 awaitPartitionMapExchange();
 
-                assertNotNull(client.cache(DEFAULT_CACHE_NAME).get(key));
+                assertNotNull(originatingNode.cache(DEFAULT_CACHE_NAME).get(key));
             }
             else if (failingNode == NODE_ROLE.ONLY_BACKUP || failingNode == NODE_ROLE.BOTH_BACKUPS)
-                assertNotNull(client.cache(DEFAULT_CACHE_NAME).get(key));
+                assertNotNull(originatingNode.cache(DEFAULT_CACHE_NAME).get(key));
             else if (failingNode == NODE_ROLE.PRIMARY) {
 
                 if (scenarioId == 7 || scenarioId == 8)
-                    assertNotNull(client.cache(DEFAULT_CACHE_NAME).get(key));
+                    assertNotNull(originatingNode.cache(DEFAULT_CACHE_NAME).get(key));
                 else
-                    assertNull(client.cache(DEFAULT_CACHE_NAME).get(key));
+                    assertNull(originatingNode.cache(DEFAULT_CACHE_NAME).get(key));
             }
         }
     }
@@ -334,7 +333,7 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
 
                 break;
             case ORIGINATING/* originating node */ :
-                assert G.stop(client.name(), true);
+                assert G.stop(originatingNode.name(), true);
 
                 break;
         }
