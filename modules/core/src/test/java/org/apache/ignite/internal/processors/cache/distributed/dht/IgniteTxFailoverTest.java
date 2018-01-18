@@ -1,9 +1,12 @@
 package org.apache.ignite.internal.processors.cache.distributed.dht;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.cache.CacheAtomicityMode;
@@ -13,21 +16,36 @@ import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.configuration.NearCacheConfiguration;
+import org.apache.ignite.internal.ComputeTaskInternalFuture;
 import org.apache.ignite.internal.IgniteInternalFuture;
+import org.apache.ignite.internal.IgniteInterruptedCheckedException;
 import org.apache.ignite.internal.processors.cache.distributed.near.GridNearTxFinishRequest;
 import org.apache.ignite.internal.processors.cache.distributed.near.GridNearTxFinishResponse;
 import org.apache.ignite.internal.processors.cache.distributed.near.GridNearTxPrepareRequest;
 import org.apache.ignite.internal.processors.cache.distributed.near.GridNearTxPrepareResponse;
+import org.apache.ignite.internal.util.future.GridCompoundFuture;
+import org.apache.ignite.internal.util.lang.GridAbsPredicate;
+import org.apache.ignite.internal.util.typedef.C1;
 import org.apache.ignite.internal.util.typedef.G;
 import org.apache.ignite.lang.IgniteBiTuple;
+import org.apache.ignite.lang.IgniteFuture;
 import org.apache.ignite.spi.communication.tcp.BlockTcpCommunicationSpi;
 import org.apache.ignite.spi.communication.tcp.IgniteBlockingRunnable;
 import org.apache.ignite.spi.communication.tcp.IgniteKamikazeRunnable;
+import org.apache.ignite.spi.communication.tcp.IgniteMultipleOptimisticTxCreationRunnable;
 import org.apache.ignite.spi.communication.tcp.IgniteReleasingRunnable;
+import org.apache.ignite.spi.communication.tcp.IgniteTxCreationRunnable;
+import org.apache.ignite.testframework.GridTestUtils;
 import org.apache.ignite.testframework.junits.common.GridCommonAbstractTest;
 import org.apache.ignite.transactions.Transaction;
 import org.apache.ignite.transactions.TransactionConcurrency;
+import org.apache.ignite.transactions.TransactionDeadlockException;
 import org.apache.ignite.transactions.TransactionIsolation;
+import org.apache.ignite.transactions.TransactionOptimisticException;
+import org.apache.ignite.transactions.TransactionState;
+import org.apache.ignite.transactions.TransactionTimeoutException;
+
+import static org.apache.ignite.internal.util.typedef.X.hasCause;
 
 /**
  *
@@ -162,270 +180,6 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
         G.stop(true);
     }
 
-    public void test1() throws Exception {
-        Ignite grid = G.start("C:\\work\\ignite\\bin\\config.xml");
-
-        awaitPartitionMapExchange();
-
-        for (ClusterNode node : grid.cluster().forServers().nodes()) {
-            System.out.println(" node id " + node.id());
-
-        }
-
-        IgniteKamikazeRunnable kamikazeRunnable = new IgniteKamikazeRunnable();
-
-        kamikazeRunnable.nodesToKill = new UUID[]{grid.cluster().forServers().node().id()};
-
-        grid.compute(grid.cluster().forServers()).broadcast(kamikazeRunnable);
-
-//        IgniteBlockingRunnable blockingRunnable = new IgniteBlockingRunnable();
-//
-//        blockingRunnable.msgToBlock = GridNearTxFinishRequest.class;
-//
-//        grid.compute(grid.cluster().forServers()).broadcast(blockingRunnable);
-//
-//        grid.compute(grid.cluster().forServers()).broadcast(new IgniteReleasingRunnable());
-
-    }
-
-    /**
-     * @param scenarioId Scenario id.
-     * @param failingNode Failing node.
-     */
-    public IgniteBiTuple<BlockTcpCommunicationSpi, BlockTcpCommunicationSpi> blockMessages(
-        int scenarioId,
-        NODE_ROLE failingNode) {
-        BlockTcpCommunicationSpi commSpi1 = null;
-        BlockTcpCommunicationSpi commSpi2 = null;
-        ClusterGroup grp = originatingNode.cluster().forRemotes();
-
-        switch (scenarioId) {
-            case 1:/* primary hasn't received prepare when failure occured. */
-                commSpi1 = commSpi(originatingNode);
-
-                commSpi1.blockMessage(GridNearTxPrepareRequest.class, failingNode != NODE_ROLE.ORIGINATING);
-
-                break;
-            case 2:/* backups haven't received prepare when failure occured. */
-                //commSpi1 = commSpi(primaryNode);
-
-                //commSpi1.blockMessage(GridDhtTxPrepareRequest.class, failingNode != NODE_ROLE.PRIMARY);
-
-                blockingRunnable.msgToBlock = GridDhtTxPrepareRequest.class;
-                blockingRunnable.nodeWhereBlock = new UUID[] {primaryNode.id()};
-                blockingRunnable.waitUnblock = false;
-
-                originatingNode.compute(grp).broadcast(blockingRunnable);
-
-                System.out.println("[txs]Block job is executed on");
-                for (ClusterNode node : grp.nodes())
-                    System.out.print(" " + node.id());
-
-                System.out.println("\n");
-
-                break;
-            case 3:/* primary hasn't received prepare response when failure occured. */
-//                commSpi1 = commSpi(backupNode1);
-//
-//                commSpi1.blockMessage(GridDhtTxPrepareResponse.class, failingNode != NODE_ROLE.BOTH_BACKUPS &&
-//                    failingNode != NODE_ROLE.ONLY_BACKUP);
-//                commSpi2 = commSpi(backupNode2);
-//
-//                commSpi2.blockMessage(GridDhtTxPrepareResponse.class, failingNode != NODE_ROLE.BOTH_BACKUPS);
-
-                blockingRunnable.msgToBlock = GridDhtTxPrepareResponse.class;
-                blockingRunnable.nodeWhereBlock = new UUID[] {backupNode1.id(), backupNode2.id()};
-                blockingRunnable.waitUnblock = failingNode != NODE_ROLE.BOTH_BACKUPS && failingNode != NODE_ROLE.ONLY_BACKUP;
-
-                originatingNode.compute(grp).broadcast(blockingRunnable);
-
-                break;
-            case 4:/* primary has received only one prepare response when failure occured.*/
-                //commSpi1 = commSpi(primaryNode);
-
-                //commSpi1.blockMessage(GridNearTxPrepareResponse.class, failingNode != NODE_ROLE.PRIMARY);
-                //commSpi2 = commSpi(backupNode2);
-
-                //commSpi2.blockMessage(GridDhtTxPrepareResponse.class, failingNode != NODE_ROLE.BOTH_BACKUPS);
-
-                blockingRunnable.msgToBlock = GridDhtTxPrepareResponse.class;
-                blockingRunnable.nodeWhereBlock = new UUID[] {primaryNode.id(), backupNode2.id()};
-                blockingRunnable.waitUnblock = failingNode != NODE_ROLE.BOTH_BACKUPS && failingNode != NODE_ROLE.ONLY_BACKUP;
-
-                originatingNode.compute(grp).broadcast(blockingRunnable);
-
-                break;
-            case 5:/* originatingNode hasn't received prepare finish when failure occured.*/
-                //commSpi1 = commSpi(primaryNode);
-
-                commSpi1.blockMessage(GridNearTxPrepareResponse.class, failingNode != NODE_ROLE.PRIMARY);
-
-                break;
-
-            case 6:/* primary hasn't received finish request when failure occured.*/
-                commSpi1 = commSpi(originatingNode);
-
-                commSpi1.blockMessage(GridNearTxFinishRequest.class, failingNode != NODE_ROLE.ORIGINATING);
-
-                break;
-            case 7:/* backups haven't received finish when failure occured.*/
-                // commSpi1 = commSpi(primaryNode);
-
-                commSpi1.blockMessage(GridDhtTxFinishRequest.class, failingNode != NODE_ROLE.PRIMARY);
-
-                break;
-            case 8:/* primary hasn't received finish responses when failure. */
-                //commSpi1 = commSpi(backupNode1);
-
-                commSpi1.blockMessage(GridDhtTxFinishResponse.class, failingNode != NODE_ROLE.BOTH_BACKUPS &&
-                    failingNode != NODE_ROLE.ONLY_BACKUP);
-                //commSpi2 = commSpi(backupNode2);
-
-                commSpi2.blockMessage(GridDhtTxFinishResponse.class, failingNode != NODE_ROLE.BOTH_BACKUPS);
-
-                break;
-            case 9:/* primary has received only one finish response when failure occured.*/
-                //commSpi1 = commSpi(primaryNode);
-
-                commSpi1.blockMessage(GridNearTxFinishResponse.class, failingNode != NODE_ROLE.PRIMARY);
-                //commSpi2 = commSpi(backupNode2);
-
-                commSpi2.blockMessage(GridDhtTxFinishResponse.class, failingNode != NODE_ROLE.BOTH_BACKUPS);
-
-                break;
-            case 10:/* originatingNode hasn't received finish response when failure occured.*/
-                //commSpi1 = commSpi(primaryNode);
-
-                commSpi1.blockMessage(GridNearTxFinishResponse.class, failingNode != NODE_ROLE.PRIMARY);
-
-                break;
-        }
-
-        return new IgniteBiTuple<>(commSpi1, commSpi2);
-    }
-
-    /**
-     * possible scenarios :
-     * 1) failure when prepare is not received on primary
-     * 2) failure when primary received prepare but not sent to backups.
-     * 3) failure when primary sent prepare to backups.
-     * 4) failure when primary received prepare response only from one backup out of 2.
-     * 5) failure when primary received prepare responses from all backups.
-     *
-     * 6) failure when finish is not received on primary
-     * 7) failure when primary received finish but not sent to backups.
-     * 8) failure when primary sent finish to backups.
-     * 9) failure when primary received finish response only from one backup out of 2.
-     * 10) failure when primary received finish responses from all backups.
-     *
-     * possible crashing nodes:
-     * 1) primary node
-     * 2) both backups
-     * 3) only one backup
-     * 4) originating node(new originatingNode will be started)
-     *
-     * @param failingNode Failing node.
-     * @param scenarioId Scenario id.
-     */
-    private void testNodeFailureWhileTransaction(NODE_ROLE failingNode, int scenarioId) throws Exception {
-        //key that would be primary on grid1, and backup on grid2, grid3
-        Integer key = null;
-
-        for (int i = 0; i < 1000; i++) {
-            if (originatingNode.affinity(DEFAULT_CACHE_NAME).isPrimary(primaryNode, i))
-                if (originatingNode.affinity(DEFAULT_CACHE_NAME).isBackup(backupNode1, i))
-                    if (originatingNode.affinity(DEFAULT_CACHE_NAME).isBackup(backupNode2, i)) {
-                        key = i;
-
-                        break;
-                    }
-        }
-
-        assert key != null;
-
-        IgniteCache<Object, Object> cache = originatingNode.cache(DEFAULT_CACHE_NAME);
-
-        System.out.println("[txs]blocking message");
-
-        IgniteBiTuple<BlockTcpCommunicationSpi, BlockTcpCommunicationSpi> commSpi = blockMessages(scenarioId, failingNode);
-
-        Thread.sleep(1_000);
-
-        try {
-            System.out.println("[txs]before commiting");
-
-            Integer finalKey = key;
-            Ignite finalClient = originatingNode;
-            // commit thread will be blocked until unblockMessage() is called
-            IgniteInternalFuture<?> commitFut = multithreadedAsync(
-                new Runnable() {
-                    @Override public void run() {
-                        Transaction tx0 = finalClient.transactions().txStart(TransactionConcurrency.OPTIMISTIC, TransactionIsolation.READ_COMMITTED);
-
-                        cache.put(finalKey, 1);
-
-                        tx0.commit();
-
-                        System.out.println(tx0.toString());
-                    }
-                }, 1);
-
-            System.out.println("[txs]Transaction started. waiting 1 sec");
-
-            Thread.sleep(1_000);
-
-            assert !commitFut.isDone();
-            System.out.println("[txs]Stopping node " + failingNode);
-
-            stopNode(failingNode);
-
-//            if (commSpi.get1() != null)
-//                commSpi.get1().unblockMessages();
-//
-//            if (commSpi.get2() != null)
-//                commSpi.get2().unblockMessages();
-
-            System.out.println("[txs]waiting after killing node");
-
-            Thread.sleep(1_000);
-
-            if (failingNode == NODE_ROLE.ONLY_BACKUP || failingNode == NODE_ROLE.BOTH_BACKUPS
-                || (failingNode == NODE_ROLE.PRIMARY && scenarioId == 7)
-                || (failingNode == NODE_ROLE.PRIMARY && scenarioId == 8))
-                assertNull(commitFut.error().toString(), commitFut.error());
-            else
-                assertNotNull(commitFut.toString(), commitFut.error());
-
-            System.out.println("[txs]commit must be finished");
-
-            commitFut.get();
-        }
-        catch (Throwable ignored) {
-            //No-op.
-            System.out.println("[txs]error occured " + ignored);
-        }
-        finally {
-            if (failingNode == NODE_ROLE.ORIGINATING) {
-                originatingNode = startGrid(getConfiguration(getTestIgniteInstanceName(4)).setClientMode(true));
-
-                awaitPartitionMapExchange();
-
-                assertNotNull(originatingNode.cache(DEFAULT_CACHE_NAME).get(key));
-            }
-            else if (failingNode == NODE_ROLE.ONLY_BACKUP || failingNode == NODE_ROLE.BOTH_BACKUPS)
-                assertNotNull(originatingNode.cache(DEFAULT_CACHE_NAME).get(key));
-            else if (failingNode == NODE_ROLE.PRIMARY) {
-
-                if (scenarioId == 7 || scenarioId == 8)
-                    assertNotNull(originatingNode.cache(DEFAULT_CACHE_NAME).get(key));
-                else
-                    assertNull(originatingNode.cache(DEFAULT_CACHE_NAME).get(key));
-            }
-
-            System.out.println("[txs]Test passed!");
-        }
-    }
-
     /**
      * @param failingNode Failing node.
      */
@@ -459,90 +213,6 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
 
                 break;
         }
-    }
-
-    /**
-     *
-     */
-    private void testPrimaryReceivedPrepareAndFailed1() throws Exception {
-        testNodeFailureWhileTransaction(NODE_ROLE.PRIMARY, 2);
-    }
-
-    /**
-     *
-     */
-//    public void testPrimarySentPrepareAndFailed() throws Exception {
-//        testNodeFailureWhileTransaction(NODE_ROLE.PRIMARY, 3);
-//    }
-
-    /**
-     *
-     */
-    private void testPrimaryReceivedFinishAndFailed1() throws Exception {
-        testNodeFailureWhileTransaction(NODE_ROLE.PRIMARY, 7);
-    }
-
-    /**
-     *
-     */
-//    public void testPrimarySentFinishAndFailed() throws Exception {
-//        testNodeFailureWhileTransaction(NODE_ROLE.PRIMARY, 8);
-//    }
-
-    /**
-     *
-     */
-    private void testBackupsReceivedPrepareAndFailed1() throws Exception {
-        testNodeFailureWhileTransaction(NODE_ROLE.ONLY_BACKUP, 3);
-    }
-
-    /**
-     *
-     */
-//    public void testPrimaryReceivedPrepareFromOneBackupAndBackupFailed() throws Exception {
-//        testNodeFailureWhileTransaction(NODE_ROLE.ONLY_BACKUP, 4);
-//    }
-
-    /**
-     *
-     */
-//    public void testPrimaryReceivedPrepareFromBackupsAndBackupFailed() throws Exception {
-//        testNodeFailureWhileTransaction(NODE_ROLE.ONLY_BACKUP, 5);
-//    }
-
-    /**
-     *
-     */
-//    public void testBackupsReceivedFinishedAndFailed() throws Exception {
-//        testNodeFailureWhileTransaction(NODE_ROLE.ONLY_BACKUP, 8);
-//    }
-
-    /**
-     *
-     */
-//    public void testPrimaryReceivedfinishFromBackupsAndBackupFailed() throws Exception {
-//        testNodeFailureWhileTransaction(NODE_ROLE.ONLY_BACKUP, 9);
-//    }
-
-    /**
-     *
-     */
-//    public void testPrimaryReceivedFinishFromBackupsAndBackupFailed() throws Exception {
-//        testNodeFailureWhileTransaction(NODE_ROLE.ONLY_BACKUP, 10);
-//    }
-
-    /**
-     *
-     */
-    private void testPrimaryReceivedPrepareAndCoordinatorFailed1() throws Exception {
-        testNodeFailureWhileTransaction(NODE_ROLE.ORIGINATING, 2);
-    }
-
-    /**
-     *
-     */
-    private void testPrimaryReceivedFinishAndCoordinatorFailed1() throws Exception {
-        testNodeFailureWhileTransaction(NODE_ROLE.ORIGINATING, 7);
     }
 
     //------------------------------------------------------------------------------------------------------------------
@@ -839,7 +509,7 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
         }
     }
 
-    public void testPrimaryReceivedPrepareAndCoordinatorFailed() throws Exception {
+    public void testPrimaryReceivedPrepareAndCoordinatorFailedTxRollback() throws Exception {
         //key that would be primary on grid1, and backup on grid2, grid3
         Integer key = null;
 
@@ -859,7 +529,8 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
 
         System.out.println("[txs]blocking message");
 
-        blockMessage(GridDhtTxPrepareRequest.class, true, primaryNode.id());
+//        blockMessage(GridDhtTxPrepareRequest.class, true, primaryNode.id());
+        blockMessage(GridDhtTxPrepareRequest.class, false, primaryNode.id());
 
         Thread.sleep(1_000);
 
@@ -903,7 +574,7 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
 
             Thread.sleep(1_000);
 
-            unblockMessages(primaryNode.id());
+            //unblockMessages(primaryNode.id());
 
             System.out.println("[txs]waiting after unblocking message on primary node");
 
@@ -918,13 +589,14 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
             System.out.println("[txs]error occured " + ignored);
         }
         finally {
-            assertNotNull(clientNode.cache(DEFAULT_CACHE_NAME).get(key));
+//            assertNotNull(clientNode.cache(DEFAULT_CACHE_NAME).get(key));
+            assertNull(clientNode.cache(DEFAULT_CACHE_NAME).get(key));
 
             System.out.println("[txs]Test passed!");
         }
     }
 
-    public void testPrimaryReceivedFinishAndCoordinatorFailed() throws Exception {
+    public void testPrimaryReceivedFinishAndCoordinatorFailedTxCommitted() throws Exception {
         //key that would be primary on grid1, and backup on grid2, grid3
         Integer key = null;
 
@@ -1084,17 +756,9 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
 
     public void testBackupsReceivedFinishAndFailedOnlyOne() throws Exception {
         //key that would be primary on grid1, and backup on grid2, grid3
-        Integer key = null;
+        Integer key;
 
-        for (int i = 0; i < 1000; i++) {
-            if (originatingNode.affinity(DEFAULT_CACHE_NAME).isPrimary(primaryNode, i))
-                if (originatingNode.affinity(DEFAULT_CACHE_NAME).isBackup(backupNode1, i))
-                    if (originatingNode.affinity(DEFAULT_CACHE_NAME).isBackup(backupNode2, i)) {
-                        key = i;
-
-                        break;
-                    }
-        }
+        key = primaryKey(primaryNode, backupNode1, backupNode2);
 
         assert key != null;
 
@@ -1156,6 +820,189 @@ public class IgniteTxFailoverTest extends GridCommonAbstractTest {
 
             System.out.println("[txs]Test passed!");
         }
+    }
+
+    private Integer primaryKey(ClusterNode primaryNode, ClusterNode backupNode1, ClusterNode backupNode2) {
+        Integer key = null;
+
+        for (int i = 0; i < 1000; i++) {
+            if (clientNode.affinity(DEFAULT_CACHE_NAME).isPrimary(primaryNode, i))
+                if (clientNode.affinity(DEFAULT_CACHE_NAME).isBackup(backupNode1, i))
+                    if (clientNode.affinity(DEFAULT_CACHE_NAME).isBackup(backupNode2, i)) {
+                        key = i;
+
+                        break;
+                    }
+        }
+
+        return key;
+    }
+
+    /**
+     *
+     */
+    public void testPessimisticDeadlockDetectionTest() throws Exception {
+        IgniteCache<Integer, Integer> clientCache = clientNode.cache(DEFAULT_CACHE_NAME);
+
+        Transaction clientTx = clientNode.transactions().txStart(TransactionConcurrency.PESSIMISTIC, TransactionIsolation.REPEATABLE_READ, 3_000, 2);
+
+        System.out.println("[txs]Before putting first " + 1);
+
+        clientCache.put(1, 1);
+
+        final AtomicInteger keyCnt = new AtomicInteger(1);
+
+        System.out.println("[txs]Before running outer txs ");
+
+        try {
+            multithreaded(new Runnable() {
+                @Override public void run() {
+
+                    for (ClusterNode node : clientNode.cluster().forServers().nodes()) {
+                        IgniteTxCreationRunnable txCreateRunnable = new IgniteTxCreationRunnable();
+
+                        txCreateRunnable.firstKey = keyCnt.get() + 1;
+                        txCreateRunnable.secondKey = keyCnt.getAndIncrement();
+                        txCreateRunnable.nodeId = node.id();
+
+                        System.out.println("[txs]Before computing " + keyCnt.get());
+
+                        clientNode.compute(clientNode.cluster().forNodeId(node.id())).broadcast(txCreateRunnable);
+                    }
+
+                    System.out.println("[txs]Before checking cache values and locks");
+
+                    for (int i = 1; i <= keyCnt.get(); i++) {
+                        assertNull(clientCache.get(i));
+
+                        Lock lock = clientCache.lock(i);
+
+                        assertFalse(lock.tryLock());
+                    }
+
+                    System.out.println("[txs]After checking cache values and locks");
+                }
+            }, 1);
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        System.out.println("[txs]After running outer txs ");
+
+        assertEquals(clientNode.cluster().forServers().nodes().size() + 1, keyCnt.get());
+
+        System.out.println("[txs]Before putting second" + keyCnt.get());
+
+        try {
+            clientCache.put(keyCnt.get(), keyCnt.get());
+
+            System.out.println("[txs]Before committing " + keyCnt.get());
+
+            clientTx.commit();
+        }
+        catch (Throwable e) {
+            if (hasCause(e, TransactionTimeoutException.class) &&
+                hasCause(e, TransactionDeadlockException.class)
+                )
+                e.printStackTrace();
+            else
+                assert false;
+        }
+        finally {
+            clientTx.close();
+        }
+
+        GridTestUtils.waitForCondition(new GridAbsPredicate() {
+            @Override public boolean apply() {
+                return TransactionState.ROLLED_BACK.equals(clientTx.state());
+            }
+        }, 3_000);
+
+        System.out.println("[txs]Before checking cache keys");
+
+        Thread.sleep(1_000);
+
+        multithreaded(new Runnable() {
+            @Override public void run() {
+                try {
+                    GridTestUtils.waitForCondition(new GridAbsPredicate() {
+                        @Override public boolean apply() {
+                            try {
+                                for (int i = 1; i < keyCnt.get(); i++) {
+                                    assert clientCache != null;
+
+                                    if (clientCache.get(i) == i + 1) {
+                                        System.out.println("[txs]key verified " + i + " -> " + (i + 1));
+                                    }
+                                    else
+                                        return false;
+
+                                }
+
+                                return clientCache.get(keyCnt.get()) == keyCnt.get();
+                            }
+                            catch (Throwable e) {
+                                System.out.println("[txs]Smth wrong happened when calling get in client cache");
+
+                                e.printStackTrace();
+
+                                throw e;
+                            }
+                        }
+                    }, 3_000);
+                }
+                catch (IgniteInterruptedCheckedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }, 1);
+    }
+
+    public void testOptimisticSerializableDeadlockDetectionTest() throws IgniteInterruptedCheckedException {
+        IgniteCache<Integer, Integer> clientCache = clientNode.cache(DEFAULT_CACHE_NAME);
+
+        Lock lock = clientCache.lock(1);
+
+        lock.lock();
+
+        IgniteMultipleOptimisticTxCreationRunnable creationRunnable = new IgniteMultipleOptimisticTxCreationRunnable();
+
+        creationRunnable.firstKey = 1;
+        creationRunnable.secondKey = 2;
+
+        Collection<ClusterNode> clusterNodes = clientNode.cluster().forServers().nodes();
+
+        ArrayList<IgniteFuture> jobs = new ArrayList<>();
+
+        for (ClusterNode node : clusterNodes)
+            jobs.add(clientNode.compute(clientNode.cluster().forNode(node)).broadcastAsync(creationRunnable));
+
+        GridTestUtils.waitForCondition(new GridAbsPredicate() {
+            @Override public boolean apply() {
+                for (IgniteFuture job : jobs) {
+                    if (!job.isDone())
+                        return false;
+                }
+
+                return false;
+            }
+        }, 3_000);
+
+        lock.unlock();
+
+        for (IgniteFuture job : jobs) {
+            try {
+                job.get();
+
+                fail();
+            } catch (Throwable e){
+                assertTrue(e instanceof TransactionOptimisticException);
+            }
+        }
+
+        assertNull(clientCache.get(1));
+        assertNull(clientCache.get(2));
     }
 
     private void unblockMessages(UUID... uuid) {
