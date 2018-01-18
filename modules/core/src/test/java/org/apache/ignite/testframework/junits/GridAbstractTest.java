@@ -976,7 +976,7 @@ public abstract class GridAbstractTest extends TestCase {
         if (cfg.getLocalHost() == null) {
             if (cfg.getDiscoverySpi() instanceof TcpDiscoverySpi) {
                 cfg.setLocalHost("127.0.0.1");
-
+                //может быть тут проблема ?
                 if (((TcpDiscoverySpi)cfg.getDiscoverySpi()).getJoinTimeout() == 0)
                     ((TcpDiscoverySpi)cfg.getDiscoverySpi()).setJoinTimeout(10000);
             }

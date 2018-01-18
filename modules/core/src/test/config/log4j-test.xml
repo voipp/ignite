@@ -111,13 +111,17 @@
         <level value="INFO"/>
     </category>
 
+	<category name="org.apache.ignite.spi.communication.tcp.BlockTcpCommunicationSpi">
+        <level value="DEBUG"/>
+		<appender-ref ref="FILE"/>
+    </category>
+	
     <!-- Default settings. -->
     <root>
         <!-- Print at info by default. -->
         <level value="INFO"/>
 
         <!-- Append to file and console. -->
-        <appender-ref ref="FILE"/>
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="CONSOLE_ERR"/>
     </root>
