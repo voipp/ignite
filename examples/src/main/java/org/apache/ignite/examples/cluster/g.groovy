@@ -4,12 +4,15 @@ import org.apache.ignite.Ignite
 import org.apache.ignite.IgniteCache
 import org.apache.ignite.IgniteLogger
 import org.apache.ignite.Ignition
+import org.apache.ignite.internal.GridLoggerProxy
 import org.apache.ignite.transactions.Transaction
 import org.apache.ignite.transactions.TransactionConcurrency
 import org.apache.ignite.transactions.TransactionIsolation
 
+import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -19,23 +22,20 @@ def cli = new CliBuilder()
 
 cli.cfg(args: 1, argName: 'cfg', 'test configuration properties file path', required: true)
 cli.igniteCfg(args: 1, argName: 'igniteCfg', 'test ignite configuration file path', required: true)
-cli.testMode(args: 1, argName: 'testMode', 'whether running test mode(true) or calculating result(false)', required: true)
-cli.testResults(args: 1, argName: 'testResults', 'path to test results', required: false)
 
 def arguments = cli.parse(args)
 
 Properties p = new Properties()
 p.load(new FileInputStream(arguments.cfg))
 
-def serverNum = Integer.parseInt p.get('serverNum')
-def keysNum = Integer.parseInt p.get('keysNum')
-def threadGroupNum = Integer.parseInt p.get('threadGroupNum')
+def serverNum = Integer.parseInt p.get('serverNum') as String
+def keysNum = Integer.parseInt p.get('keysNum') as String
+def threadGroupNum = Integer.parseInt(p.get('threadGroupNum') as String)
 def cacheName = p.get('cacheName')
-def testTime = Long.parseLong p.get('testTime')
-def txConcurrency = TransactionConcurrency.valueOf p.get('txConcurrency')
-def txIsolation = TransactionIsolation.valueOf p.get('txIsolation')
-
-def testMode = Boolean.parseBoolean arguments.testMode
+def testTime = Long.parseLong p.get('testTime') as String
+def txConcurrency = TransactionConcurrency.valueOf p.get('txConcurrency') as String
+def txIsolation = TransactionIsolation.valueOf p.get('txIsolation') as String
+def warmupTime = Integer.parseInt p.get('warmupTime') as String
 
 //starting client.
     Ignite client = Ignition.start(arguments.igniteCfg)
@@ -49,7 +49,7 @@ def testMode = Boolean.parseBoolean arguments.testMode
 
     suspendResumeLogger.debug "Test started[Servers number= $serverNum, keys number= $keysNum, " +
         "thread groups number= $threadGroupNum, starting cache with name= $cacheName, test time= $testTime, " +
-        "transaction concurrency= $txConcurrency, transaction isolation= $txIsolation]"
+        "transaction concurrency= $txConcurrency, transaction isolation= $txIsolation, warmup time= $warmupTime]"
 
 //((IgniteKernal)client).context().cache().context().exchange().affinityReadyFuture(new AffinityTopologyVersion((long)(serverNum + 1))).get();// ?
 
@@ -63,12 +63,12 @@ def testMode = Boolean.parseBoolean arguments.testMode
 
 //filling cache with initial values.
     keysNum.times {
-        suspendResumeLogger.debug "putting key $it into cache"
-
         dataStreamer.addData(it.toString(), 0)
     }
 
-    dataStreamer.close false
+boolean loggingEnabled = false
+
+dataStreamer.close false
 
     AtomicInteger keyCntr = new AtomicInteger(0)
 
@@ -77,31 +77,17 @@ def testMode = Boolean.parseBoolean arguments.testMode
 
         Integer origin = keyCntr.getAndAdd(keysNumbPerGroup)
 
-        while (true) {
-            int key = ThreadLocalRandom.current().nextInt(origin, origin + keysNumbPerGroup).toString();
+        String key
 
-            suspendResumeLogger.debug("Starting transaction, key=".concat(key))
+        long time, txStartTime
 
-            long time = System.nanoTime()
-
-            long txStartTime = time
-
-            Transaction tx = txs.txStart(txConcurrency, txIsolation)
-
-            suspendResumeLogger.debug 'Transaction started with time='.concat(System.nanoTime() - time as String)
-
-            int res = cache.get(key)
-
-            cache.put(key, res + 2)
-
-            time = System.nanoTime()
-
-            tx.suspend()
-
-            threadsExecutor.submit({
+        Callable newThCallable = new Callable() {
+            @Override
+            Object call() throws Exception {
                 tx.resume()
 
-                suspendResumeLogger.debug 'Resumed transaction with time='.concat(System.nanoTime() - time as String)
+                if (loggingEnabled)
+                    suspendResumeLogger.debug("Resumed transaction with time=" + (System.nanoTime() - time))
 
                 res = cache.get(key)
 
@@ -110,24 +96,16 @@ def testMode = Boolean.parseBoolean arguments.testMode
                 time = System.nanoTime()
 
                 tx.suspend()
-            }).get()
+            }
+        }
 
-            tx.resume()
-
-            suspendResumeLogger.debug 'Resumed transaction with time='.concat(System.nanoTime() - time as String)
-
-            res = cache.get(key)
-
-            cache.put(key, res + 3)
-
-            time = System.nanoTime()
-
-            tx.suspend()
-
-            threadsExecutor.submit({
+        Callable newThCallable2 = new Callable() {
+            @Override
+            Object call() throws Exception {
                 tx.resume()
 
-                suspendResumeLogger.debug 'Resumed transaction with time='.concat(System.nanoTime() - time as String)
+                if (loggingEnabled)
+                    suspendResumeLogger.debug("Resumed transaction with time=" + (System.nanoTime() - time))
 
                 res = cache.get(key)
 
@@ -137,16 +115,59 @@ def testMode = Boolean.parseBoolean arguments.testMode
 
                 tx.commit()
 
-                suspendResumeLogger.debug 'Transaction committed with time='.concat(System.nanoTime() - time as String)
+                if (loggingEnabled)
+                    suspendResumeLogger.debug("Transaction committed with time=" + (System.nanoTime() - time))
 
-                suspendResumeLogger.debug 'Transaction overall time='.concat(System.nanoTime() - txStartTime as String)
-            }).get()
+                if (loggingEnabled)
+                    suspendResumeLogger.debug("Transaction overall time=" + (System.nanoTime() - txStartTime))
+            }
+        }
+
+        while (true) {
+            key = ThreadLocalRandom.current().nextInt(origin, origin + keysNumbPerGroup).toString();
+
+            if (loggingEnabled)
+                suspendResumeLogger.debug("Starting transaction, key=" + key)
+
+            time = System.nanoTime()
+
+            txStartTime = time
+
+            Transaction tx = txs.txStart(txConcurrency, txIsolation)
+
+            if (loggingEnabled)
+                suspendResumeLogger.debug("Transaction started with time=" + (System.nanoTime() - time))
+
+            int res = cache.get(key)
+
+            cache.put(key, res + 2)
+
+            time = System.nanoTime()
+
+            tx.suspend()
+
+            threadsExecutor.submit(newThCallable).get()
+
+            tx.resume()
+
+            if (loggingEnabled)
+                suspendResumeLogger.debug("Resumed transaction with time=" + (System.nanoTime() - time))
+
+            res = cache.get(key)
+
+            cache.put(key, res + 3)
+
+            time = System.nanoTime()
+
+            tx.suspend()
+
+            threadsExecutor.submit(newThCallable2).get()
         }
     }
 
     ExecutorService groupsExecutor = Executors.newFixedThreadPool(threadGroupNum)
 
-    suspendResumeLogger.debug 'Starting suspend/resume test scenarios'
+suspendResumeLogger.debug "Starting suspend/resume test scenarios, warmup time= $warmupTime"
 
     threadGroupNum.times {
         groupsExecutor.submit(testSuspendResumeScenario)
@@ -154,7 +175,17 @@ def testMode = Boolean.parseBoolean arguments.testMode
 
     groupsExecutor.shutdown()
 
-    assert !groupsExecutor.awaitTermination(testTime, TimeUnit.SECONDS)
+ScheduledExecutorService warmupExecutor = Executors.newScheduledThreadPool(1)
+
+warmupExecutor.schedule({
+    suspendResumeLogger.debug 'Warmup has ended, starting the test'
+
+    loggingEnabled = true
+}, warmupTime, TimeUnit.SECONDS).get()
+
+warmupExecutor.shutdownNow();
+
+assert !groupsExecutor.awaitTermination(testTime, TimeUnit.SECONDS)
 
     groupsExecutor.shutdownNow()
 
@@ -204,7 +235,7 @@ def testMode = Boolean.parseBoolean arguments.testMode
 
     groupsExecutor = Executors.newFixedThreadPool(threadGroupNum)
 
-    standardLogger.debug 'Starting standard test scenarios'
+standardLogger.debug "Starting standard test scenarios, warmup time= $warmupTime"
 
     threadGroupNum.times {
         groupsExecutor.submit(testStandardScenario)
@@ -212,7 +243,17 @@ def testMode = Boolean.parseBoolean arguments.testMode
 
     groupsExecutor.shutdown()
 
-    assert !groupsExecutor.awaitTermination(testTime, TimeUnit.SECONDS)
+warmupExecutor = Executors.newScheduledThreadPool(1)
+
+warmupExecutor.schedule({
+    standardLogger.debug 'Warmup has ended, starting the test'
+
+    loggingEnabled = true
+}, warmupTime, TimeUnit.SECONDS).get()
+
+warmupExecutor.shutdownNow();
+
+assert !groupsExecutor.awaitTermination(testTime, TimeUnit.SECONDS)
 
     groupsExecutor.shutdownNow()
 
