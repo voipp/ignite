@@ -4,30 +4,94 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.rmi.UnexpectedException;
 import java.util.*;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.commons.cli.*;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.IgniteDataStreamer;
-import org.apache.ignite.IgniteLogger;
-import org.apache.ignite.IgniteTransactions;
 import org.apache.ignite.Ignition;
+import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.internal.IgniteKernal;
 import org.apache.ignite.internal.processors.cache.GridCacheSharedContext;
+import org.apache.ignite.internal.util.lang.GridTuple3;
 import org.apache.ignite.lang.IgniteCallable;
 import org.apache.ignite.resources.IgniteInstanceResource;
 import org.apache.ignite.transactions.Transaction;
 import org.apache.ignite.transactions.TransactionConcurrency;
 import org.apache.ignite.transactions.TransactionIsolation;
+import org.apache.log4j.Logger;
 
 /**
  * Created by SBT-Kuznetsov-AL on 10.04.2018.
  */
 public class TransactionBenchmarkRunner {
+    /**
+     * @param args Args.
+     */
+    public static void main(String[] args) throws IOException {
+        TestConfiguration testCfg = parseCommandLine(args);
+        assert testCfg != null;
+
+        IgniteCache<Integer, CacheValueHolder> cache = null;
+
+        try (Ignite client = Ignition.start(testCfg.igniteCfg)) {
+            Logger suspendResumeScenarioLog = Logger.getLogger("SuspendResumeScenarioLogger");
+            Logger standardScenarioLog = Logger.getLogger("StandardScenarioLogger");
+
+            if (client.cluster().forRemotes().forServers().nodes().size() != testCfg.srvNum)
+                throw new UnexpectedException("Client failed to connect to cluster");
+
+            int backups = client.cache(testCfg.cacheName).getConfiguration(CacheConfiguration.class).getBackups();
+
+            if (backups > testCfg.srvNum)
+                throw new IllegalArgumentException("Incorrect number of backup nodes=" + backups
+                    + ". Must be less than number of server nodes= " + testCfg.srvNum);
+
+            assert client.cluster().localNode().isClient() : "Client node must start test";
+            // cluster might be deactivated on start, so activate it.
+            client.active(true);
+
+            Thread.sleep(1_000);
+
+            cache = client.getOrCreateCache(testCfg.cacheName);
+
+            cache.clear();
+
+            fillCacheWithInitialValues(client, testCfg);
+
+            for (Integer i = 0; i < testCfg.keysNum; i++)
+                assert cache.get(i).val == 0;
+
+            suspendResumeScenarioLog.debug(
+                "Starting test." +
+                    "\nServers number= " + testCfg.srvNum
+                    + "\nkeys number= " + testCfg.keysNum
+                    + "\nthread groups number= " + testCfg.threadGrpNum
+                    + "\nstarting cache with name= " + testCfg.cacheName
+                    + "\ntest time= " + testCfg.testTime
+                    + "\ntransaction concurrency= " + testCfg.txConcurrency
+                    + "\ntransaction isolation= " + testCfg.txIsolation
+                    + "\nwarmup time= " + testCfg.warmupTime
+                    + "\nkeys per thread group= " + testCfg.keysNumbPerGrp);
+
+            runSuspendResumeScenarioTest(client, cache, suspendResumeScenarioLog, testCfg);
+
+            Thread.sleep(1_000);
+
+            runStandardScenarioTest(client, cache, standardScenarioLog, testCfg);
+        }
+        catch (InterruptedException e) {
+            //No-op.
+        }
+        finally {
+            if (cache != null)
+                cache.clear();
+        }
+    }
+
     /**
      * @param args Args.
      */
@@ -87,58 +151,7 @@ public class TransactionBenchmarkRunner {
         testCfg.warmupTime = Long.parseLong((String)p.get("warmupTime"));
         testCfg.keysNumbPerGrp = (testCfg.keysNum > testCfg.threadGrpNum ? testCfg.keysNum / testCfg.threadGrpNum : testCfg.keysNum);
 
-
         return testCfg;
-    }
-
-    /**
-     * @param args Args.
-     */
-    public static void main(String[] args) throws IOException, InterruptedException {
-        TestConfiguration testCfg = parseCommandLine(args);
-        assert testCfg != null;
-
-        Ignite client = Ignition.start(testCfg.igniteCfg);
-        //assert client.cluster().localNode().isClient() : "Client node must start test";
-        // cluster might be deactivated on start, so activate it.
-        client.active(true);
-
-        Thread.sleep(1_000);
-
-        IgniteCache<Integer, CacheValueHolder> cache = client.getOrCreateCache(testCfg.cacheName);
-        IgniteTransactions txs = client.transactions();
-
-        IgniteLogger suspendResumeLog = client.log().getLogger("SuspendResumeScenarioLogger");
-        IgniteLogger standardLog = client.log().getLogger("StandardScenarioLogger");
-
-        if (client.cluster().forRemotes().forServers().nodes().size() != testCfg.srvNum)
-            throw new UnexpectedException("Client failed to connect to cluster");
-
-        suspendResumeLog.debug("Test started." +
-            "\nServers number= " + testCfg.srvNum
-            + ", keys number= " + testCfg.keysNum
-            + ", thread groups number= " + testCfg.threadGrpNum
-            + ", starting cache with name= " + testCfg.cacheName
-            + ", test time= " + testCfg.testTime
-            + ", transaction concurrency= " + testCfg.txConcurrency
-            + ", transaction isolation= " + testCfg.txIsolation
-            + ", warmup time= " + testCfg.warmupTime
-            + ", keys per thread group= " + testCfg.keysNumbPerGrp);
-
-        fillCacheWithInitialValues(client, testCfg);
-
-        for (Integer i = 0; i < testCfg.keysNum; i++)
-            assert cache.get(i).val == 0;
-
-        startSuspendResumeScenarioTest(client, cache, txs, suspendResumeLog, testCfg.keysNumbPerGrp, testCfg);
-
-        Thread.sleep(1_000);
-
-        startStandardScenarioTest(client, cache, txs, standardLog, testCfg.keysNumbPerGrp, testCfg);
-
-        cache.removeAll();
-
-        client.close();
     }
 
     /**
@@ -146,80 +159,37 @@ public class TransactionBenchmarkRunner {
      *
      * @param client Client.
      * @param cache Cache.
-     * @param txs Txs.
      * @param log Logger.
-     * @param keysNumbPerGrp Keys numb per group.
      * @param testCfg Test config.
      */
-    private static void startStandardScenarioTest(Ignite client,
+    private static void runStandardScenarioTest(Ignite client,
         IgniteCache<Integer, CacheValueHolder> cache,
-        IgniteTransactions txs,
-        IgniteLogger log,
-        int keysNumbPerGrp,
+        Logger log,
         TestConfiguration testCfg)
         throws InterruptedException {
-        AtomicInteger keyCntr = new AtomicInteger(0);
+        int keyCntr = 0;
 
-        Runnable testStandardScenario = new Runnable() {
-            @Override public void run() {
-                Integer origin = keyCntr.getAndAdd(keysNumbPerGrp);
+        log.debug(
+            "Starting standard test scenario.\nTotal test time=" + (testCfg.warmupTime + testCfg.testTime)
+                + "(sec.) \nwarmup time= " + testCfg.warmupTime + "(sec.)");
 
-                Integer key;
-                long txTotalTime;
-                long txStartTime;
-                Transaction tx = null;
+        ExecutorService groupsExecutor = Executors.newFixedThreadPool(testCfg.threadGrpNum);
 
-                try {
-                    while (true) {
-                        key = ThreadLocalRandom.current().nextInt(origin, origin + keysNumbPerGrp);
+        for (Integer i = 0; i < testCfg.threadGrpNum; i++) {
+            groupsExecutor.submit(new StandardScenario(keyCntr, testCfg, cache, log, client));
 
-                        txTotalTime = System.nanoTime();
+            keyCntr +=testCfg.keysNumbPerGrp;
+        }
 
-                        tx = txs.txStart(testCfg.txConcurrency, testCfg.txIsolation);
+        groupsExecutor.shutdown();
 
-                        txStartTime = System.nanoTime() - txTotalTime;
+        groupsExecutor.awaitTermination(testCfg.testTime + testCfg.warmupTime, TimeUnit.SECONDS);
 
-                        CacheValueHolder val = cache.get(key);
+        groupsExecutor.shutdownNow();
 
-                        val.val += 2;
+        checkAllTransactionsHaveFinished(client);
 
-                        cache.put(key, val);
-
-                        val.val /= 2;
-
-                        cache.put(key, val);
-
-                        val.val += 3;
-
-                        cache.put(key, val);
-
-                        val.val /= 4;
-
-                        cache.put(key, val);
-
-                        long txCommitTime = System.nanoTime();
-
-                        tx.commit();
-
-                        log.debug(
-                            "\nTxTotalTime=" + (System.nanoTime() - txTotalTime) +
-                                "\nTxStartTime=" + txStartTime +
-                                "\nTxCommitTime=" + (System.nanoTime() - txCommitTime)
-                        );
-                    }
-                }
-                finally {
-                    if (tx != null)
-                        tx.close();
-                }
-            }
-        };
-
-        log.debug("\nStarting standard test scenarios, warmup time= " + testCfg.warmupTime);
-
-        executeScenario(testStandardScenario, testCfg.threadGrpNum, testCfg.testTime + testCfg.warmupTime, client);
-
-        log.debug("Successfully finished standart test scenarios.");
+        log.debug("Successfully finished standard test scenarios.");
     }
 
     /**
@@ -227,96 +197,53 @@ public class TransactionBenchmarkRunner {
      *
      * @param client Client.
      * @param cache Cache.
-     * @param txs Txs.
      * @param log Logger.
-     * @param keysNumbPerGrp Keys numb per group.
      * @param testCfg Test config.
      */
-    private static void startSuspendResumeScenarioTest(Ignite client,
+    private static void runSuspendResumeScenarioTest(
+        Ignite client,
         IgniteCache<Integer, CacheValueHolder> cache,
-        IgniteTransactions txs,
-        IgniteLogger log,
-        int keysNumbPerGrp,
+        Logger log,
         TestConfiguration testCfg) throws InterruptedException {
-        AtomicInteger keyCntr = new AtomicInteger(0);
+        checkAllTransactionsHaveFinished(client);
 
-        Runnable testSuspendResumeScenario = new Runnable() {
-            @Override public void run() {
-                Integer key;
-                SimpleSingleThreadPool executor = new SimpleSingleThreadPool(cache);
+        log.debug(
+            "Starting suspend/resume test scenario.\nTotal test time=" + (testCfg.warmupTime + testCfg.testTime)
+            + "(sec.) \nwarmup time= " + testCfg.warmupTime + "(sec.)");
 
-                Transaction tx = null;
+        ExecutorService step1Executor = Executors.newFixedThreadPool(testCfg.threadGrpNum);
 
-                try {
-                    Integer origin = keyCntr.getAndAdd(keysNumbPerGrp);
+        ArrayBlockingQueue<GridTuple3<Transaction, Integer, Long>> step2Queue = new ArrayBlockingQueue<>(testCfg.threadGrpNum);
+        ExecutorService step2Executor = Executors.newFixedThreadPool(testCfg.threadGrpNum);
 
-                    long txTotalTime;
-                    long txStartTime;
-                    long txSuspendResumeTime0;
-                    long txSuspendResumeTime1;
-                    long txSuspendResumeTime2;
+        ArrayBlockingQueue<GridTuple3<Transaction, Integer, Long>> step3Queue = new ArrayBlockingQueue<>(testCfg.threadGrpNum);
+        ExecutorService step3Executor = Executors.newFixedThreadPool(testCfg.threadGrpNum);
 
-                    while (true) {
-                        key = ThreadLocalRandom.current().nextInt(origin, origin + keysNumbPerGrp);
+        ArrayBlockingQueue<GridTuple3<Transaction, Integer, Long>> step4Queue = new ArrayBlockingQueue<>(testCfg.threadGrpNum);
+        ExecutorService step4Executor = Executors.newFixedThreadPool(testCfg.threadGrpNum);
 
-                        txTotalTime = System.nanoTime();
+        int keyCntr = 0;
 
-                        tx = txs.txStart(testCfg.txConcurrency, testCfg.txIsolation);
+        for (Integer i = 0; i < testCfg.threadGrpNum; i++) {
+            ((ExecutorService)step4Executor).submit(new Step4Runnable(step4Queue, cache, log));
+            ((ExecutorService)step3Executor).submit(new Step3Runnable(step3Queue, step4Queue, cache, log));
+            ((ExecutorService)step2Executor).submit(new Step2Runnable(step2Queue, step3Queue, cache, log));
+            ((ExecutorService)step1Executor).submit(new Step1Runnable(step2Queue, cache, log, client, testCfg, keyCntr, testCfg.keysNumbPerGrp));
 
-                        txStartTime = System.nanoTime() - txTotalTime;
+            keyCntr += testCfg.keysNumbPerGrp;
+        }
 
-                        CacheValueHolder val = cache.get(key);
+        step4Executor.shutdown();
 
-                        val.val += 2;
+        step4Executor.awaitTermination(testCfg.testTime + testCfg.warmupTime, TimeUnit.SECONDS);
 
-                        cache.put(key, val);
+        step4Executor.shutdownNow();
 
-                        txSuspendResumeTime0 = System.nanoTime();
+        step3Executor.shutdownNow();
+        step2Executor.shutdownNow();
+        step1Executor.shutdownNow();
 
-                        tx.suspend();
-
-                        executor.executeSecondStepTask(tx, key);
-
-                        tx.resume();
-
-                        txSuspendResumeTime1 = System.nanoTime() - executor.timeVar2;
-
-                        txSuspendResumeTime0 = executor.timeVar1 - txSuspendResumeTime0;
-
-                        val = cache.get(key);
-
-                        val.val += 3;
-
-                        cache.put(key, val);
-
-                        txSuspendResumeTime2 = System.nanoTime();
-
-                        tx.suspend();
-
-                        executor.executeFourthStepTask(tx, key);
-
-                        log.debug(
-                            "\nTxTotalTime=" + (System.nanoTime() - txTotalTime) +
-                                "\nTxStartTime=" + txStartTime +
-                                "\nTxCommitTime=" + executor.timeVar2 +
-                                "\nTxSuspendResumeTime=" + txSuspendResumeTime0 +
-                                "\nTxSuspendResumeTime=" + txSuspendResumeTime1 +
-                                "\nTxSuspendResumeTime=" + (executor.timeVar1 - txSuspendResumeTime2)
-                        );
-                    }
-                }
-                finally {
-                    if (tx != null)
-                        tx.close();
-
-                    executor.stopWorker();
-                }
-            }
-        };
-
-        log.debug("Starting suspend/resume test scenarios, warmup time= " + testCfg.warmupTime);
-
-        executeScenario(testSuspendResumeScenario, testCfg.threadGrpNum, testCfg.testTime + testCfg.warmupTime, client);
+        checkAllTransactionsHaveFinished(client);
 
         log.debug("Successfully finished suspend-resume test scenario.");
     }
@@ -337,30 +264,6 @@ public class TransactionBenchmarkRunner {
         dataStreamer.flush();
 
         dataStreamer.close(false);
-    }
-
-    /**
-     * @param scenario Scenario to run.
-     * @param numbOfThreads Numb of threads to run scenario in.
-     * @param timeToWait Time to wait until scenarios will be canceled(in seconds).
-     * @param client Client.
-     */
-    public static void executeScenario(Runnable scenario, int numbOfThreads,
-        long timeToWait, Ignite client) throws InterruptedException {
-        checkAllTransactionsHaveFinished(client);
-
-        ExecutorService groupsExecutor = Executors.newFixedThreadPool(numbOfThreads);
-
-        for (Integer i = 0; i < numbOfThreads; i++)
-            groupsExecutor.submit(scenario);
-
-        groupsExecutor.shutdown();
-
-        groupsExecutor.awaitTermination(timeToWait, TimeUnit.SECONDS);
-
-        groupsExecutor.shutdownNow();
-
-        checkAllTransactionsHaveFinished(client);
     }
 
     /**
