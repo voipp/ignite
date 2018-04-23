@@ -4,9 +4,11 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ThreadLocalRandom;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
-import org.apache.ignite.internal.util.lang.GridTuple3;
+import org.apache.ignite.internal.util.lang.GridTuple6;
 import org.apache.ignite.transactions.Transaction;
 import org.apache.log4j.Logger;
+
+import static org.apache.ignite.transactions.TransactionState.SUSPENDED;
 
 /*
  * Suspend-resume scenario first step.
@@ -19,7 +21,7 @@ public class Step1Runnable implements Runnable {
     /** Logger. */
     private final Logger log;
     /** Output queue. */
-    private BlockingQueue<GridTuple3<Transaction, Integer, Long>> outputQueue;
+    private BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> outputQueue;
     /** Cache. */
     private IgniteCache<Integer, CacheValueHolder> cache;
     /** Origin key. */
@@ -37,7 +39,7 @@ public class Step1Runnable implements Runnable {
      * @param keysNumbPerGrp keys number per group.
      */
     public Step1Runnable(
-        BlockingQueue<GridTuple3<Transaction, Integer, Long>> outputQueue,
+        BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> outputQueue,
         IgniteCache<Integer, CacheValueHolder> cache,
         Logger log,
         Ignite ignite,
@@ -80,19 +82,21 @@ public class Step1Runnable implements Runnable {
 
                 txSuspendTime = System.nanoTime() - txSuspendTime;
 
-                log.debug(
-                    "TxStartTime=" + txStartTime
-                        + "\nTxSuspendTime=" + txSuspendTime
-                );
-
-                GridTuple3<Transaction, Integer, Long> outputData = new GridTuple3<>(tx, key, System.nanoTime() - totalTime);
-
-                outputQueue.add(outputData);
+                //tx, key, start-time, suspend-time, resume-time, total-time
+                outputQueue.put(new GridTuple6(tx, key, txStartTime, txSuspendTime, 0, System.nanoTime() - totalTime));
             }
         }
+        catch (Throwable t) {
+            if (!(t instanceof InterruptedException))
+                log.error("Exception while transaction is in progress", t);
+        }
         finally {
-            if (tx != null)
+            if (tx != null) {
+                if (SUSPENDED.equals(tx.state()))
+                    tx.resume();
+
                 tx.close();
+            }
         }
     }
 }

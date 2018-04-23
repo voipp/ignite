@@ -85,9 +85,9 @@ public class StandardScenario implements Runnable {
                 tx.commit();
 
                 log.debug(
-                        "\nTxTotalTime=" + (System.nanoTime() - txTotalTime) +
-                        "\nTxStartTime=" + txStartTime +
-                        "\nTxCommitTime=" + (System.nanoTime() - txCommitTime)
+                    txStartTime + // tx start time
+                        "," + (System.nanoTime() - txCommitTime) + // tx commit time
+                        "," + (System.nanoTime() - txTotalTime) // tx total time
                 );
             }
         }

@@ -2,9 +2,11 @@ package org.benchmark;
 
 import java.util.concurrent.BlockingQueue;
 import org.apache.ignite.IgniteCache;
-import org.apache.ignite.internal.util.lang.GridTuple3;
+import org.apache.ignite.internal.util.lang.GridTuple6;
 import org.apache.ignite.transactions.Transaction;
 import org.apache.log4j.Logger;
+
+import static org.apache.ignite.transactions.TransactionState.*;
 
 /*
  * Suspend-resume scenario fourth step.
@@ -13,7 +15,7 @@ public class Step4Runnable implements Runnable {
     /** Logger. */
     private final Logger log;
     /** Input queue. */
-    private BlockingQueue<GridTuple3<Transaction, Integer, Long>> inputQueue;
+    private BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> inputQueue;
     /** Cache. */
     private IgniteCache<Integer, CacheValueHolder> cache;
 
@@ -23,7 +25,7 @@ public class Step4Runnable implements Runnable {
      * @param log Logger.
      */
     public Step4Runnable(
-        BlockingQueue<GridTuple3<Transaction, Integer, Long>> inputQueue,
+        BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> inputQueue,
         IgniteCache<Integer, CacheValueHolder> cache,
         Logger log
     ) {
@@ -39,7 +41,8 @@ public class Step4Runnable implements Runnable {
 
         try {
             while (true) {
-                GridTuple3<Transaction, Integer, Long> inputData = inputQueue.take();
+                //tx, key, start-time, suspend-time, resume-time, total-time
+                GridTuple6<Transaction, Integer, Long, Long, Long, Long> inputData = inputQueue.take();
 
                 tx = inputData.get1();
 
@@ -47,7 +50,7 @@ public class Step4Runnable implements Runnable {
 
                 tx.resume();
 
-                long txResumeTime = System.nanoTime() - totalTime;
+                long txResumeTime = System.nanoTime() - totalTime + inputData.get5();
 
                 CacheValueHolder val = cache.get(inputData.get2());
 
@@ -61,21 +64,29 @@ public class Step4Runnable implements Runnable {
 
                 txCommitTime = System.nanoTime() - txCommitTime;
 
-                totalTime = System.nanoTime() - totalTime + inputData.get3();
+                totalTime = System.nanoTime() - totalTime + inputData.get6();
 
                 log.debug(
-                    "TxCommitTime=" + txCommitTime
-                        + "\nTxResumeTime=" + txResumeTime
-                        + "\nTxTotalTime=" + totalTime
+                    inputData.get3() + // tx start time
+                        "," + inputData.get4() / 3 + // tx suspend time
+                        "," + txResumeTime / 3 + // tx resume time
+                        "," + txCommitTime + // tx commit time
+                        "," + totalTime // tx total time
                 );
             }
         }
-        catch (InterruptedException e) {
-            //No-op.
+        catch (Throwable t) {
+            if (!(t instanceof InterruptedException))
+                log.error("Exception while transaction is in progress", t);
         }
         finally {
-            if (tx != null)
+            if (tx != null) {
+                if (SUSPENDED.equals(tx.state()))
+                    tx.resume();
+
                 tx.close();
+
+            }
         }
     }
 }

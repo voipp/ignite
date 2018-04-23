@@ -27,4 +27,8 @@ public class TestConfiguration {
     public long warmupTime;
     /** Keys numb per group. */
     public int keysNumbPerGrp;
+    /** Queue size. */
+    public int queueSize;
+    /** Default queue size. */
+    public static final int DEFAULT_QUEUE_SIZE = 5_000;
 }

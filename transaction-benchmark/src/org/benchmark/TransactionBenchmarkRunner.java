@@ -4,9 +4,9 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.rmi.UnexpectedException;
 import java.util.*;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.apache.commons.cli.*;
 import org.apache.ignite.Ignite;
@@ -16,13 +16,15 @@ import org.apache.ignite.Ignition;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.internal.IgniteKernal;
 import org.apache.ignite.internal.processors.cache.GridCacheSharedContext;
-import org.apache.ignite.internal.util.lang.GridTuple3;
+import org.apache.ignite.internal.util.lang.GridTuple6;
 import org.apache.ignite.lang.IgniteCallable;
 import org.apache.ignite.resources.IgniteInstanceResource;
 import org.apache.ignite.transactions.Transaction;
 import org.apache.ignite.transactions.TransactionConcurrency;
 import org.apache.ignite.transactions.TransactionIsolation;
 import org.apache.log4j.Logger;
+
+import static org.benchmark.TestConfiguration.*;
 
 /**
  * Created by SBT-Kuznetsov-AL on 10.04.2018.
@@ -35,11 +37,14 @@ public class TransactionBenchmarkRunner {
         TestConfiguration testCfg = parseCommandLine(args);
         assert testCfg != null;
 
-        IgniteCache<Integer, CacheValueHolder> cache = null;
+        IgniteCache<Integer, CacheValueHolder> cache;
 
         try (Ignite client = Ignition.start(testCfg.igniteCfg)) {
             Logger suspendResumeScenarioLog = Logger.getLogger("SuspendResumeScenarioLogger");
             Logger standardScenarioLog = Logger.getLogger("StandardScenarioLogger");
+
+            // cluster might be deactivated on start, so activate it.
+            client.active(true);
 
             if (client.cluster().forRemotes().forServers().nodes().size() != testCfg.srvNum)
                 throw new UnexpectedException("Client failed to connect to cluster");
@@ -51,8 +56,6 @@ public class TransactionBenchmarkRunner {
                     + ". Must be less than number of server nodes= " + testCfg.srvNum);
 
             assert client.cluster().localNode().isClient() : "Client node must start test";
-            // cluster might be deactivated on start, so activate it.
-            client.active(true);
 
             Thread.sleep(1_000);
 
@@ -82,13 +85,12 @@ public class TransactionBenchmarkRunner {
             Thread.sleep(1_000);
 
             runStandardScenarioTest(client, cache, standardScenarioLog, testCfg);
+
+            if (cache != null)
+                cache.clear();
         }
         catch (InterruptedException e) {
             //No-op.
-        }
-        finally {
-            if (cache != null)
-                cache.clear();
         }
     }
 
@@ -141,15 +143,16 @@ public class TransactionBenchmarkRunner {
         Properties p = new Properties();
         p.load(new FileInputStream(cfg));
 
-        testCfg.srvNum = Integer.parseInt((String)p.get("serverNum"));
-        testCfg.keysNum = Integer.parseInt((String)p.get("keysNum"));
-        testCfg.threadGrpNum = Integer.parseInt((String)p.get("threadGroupNum"));
-        testCfg.cacheName = String.valueOf(p.get("cacheName"));
-        testCfg.testTime = Long.parseLong((String)p.get("testTime"));
-        testCfg.txConcurrency = TransactionConcurrency.valueOf((String)p.get("txConcurrency"));
-        testCfg.txIsolation = TransactionIsolation.valueOf((String)p.get("txIsolation"));
-        testCfg.warmupTime = Long.parseLong((String)p.get("warmupTime"));
+        testCfg.srvNum = Integer.parseInt((String)p.get("server-num"));
+        testCfg.keysNum = Integer.parseInt((String)p.get("keys-num"));
+        testCfg.threadGrpNum = Integer.parseInt((String)p.get("thread-group-num"));
+        testCfg.cacheName = String.valueOf(p.get("cache-name"));
+        testCfg.testTime = Long.parseLong((String)p.get("test-time"));
+        testCfg.txConcurrency = TransactionConcurrency.valueOf((String)p.get("tx-concurrency"));
+        testCfg.txIsolation = TransactionIsolation.valueOf((String)p.get("tx-isolation"));
+        testCfg.warmupTime = Long.parseLong((String)p.get("warmup-time"));
         testCfg.keysNumbPerGrp = (testCfg.keysNum > testCfg.threadGrpNum ? testCfg.keysNum / testCfg.threadGrpNum : testCfg.keysNum);
+        testCfg.queueSize = p.containsKey("queue-size") ? Integer.parseInt((String)p.get("queue-size")) : DEFAULT_QUEUE_SIZE;
 
         return testCfg;
     }
@@ -213,13 +216,13 @@ public class TransactionBenchmarkRunner {
 
         ExecutorService step1Executor = Executors.newFixedThreadPool(testCfg.threadGrpNum);
 
-        ArrayBlockingQueue<GridTuple3<Transaction, Integer, Long>> step2Queue = new ArrayBlockingQueue<>(testCfg.threadGrpNum);
+        LinkedBlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> step2Queue = new LinkedBlockingQueue<>(testCfg.queueSize);
         ExecutorService step2Executor = Executors.newFixedThreadPool(testCfg.threadGrpNum);
 
-        ArrayBlockingQueue<GridTuple3<Transaction, Integer, Long>> step3Queue = new ArrayBlockingQueue<>(testCfg.threadGrpNum);
+        LinkedBlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> step3Queue = new LinkedBlockingQueue<>(testCfg.queueSize);
         ExecutorService step3Executor = Executors.newFixedThreadPool(testCfg.threadGrpNum);
 
-        ArrayBlockingQueue<GridTuple3<Transaction, Integer, Long>> step4Queue = new ArrayBlockingQueue<>(testCfg.threadGrpNum);
+        LinkedBlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> step4Queue = new LinkedBlockingQueue<>(testCfg.queueSize);
         ExecutorService step4Executor = Executors.newFixedThreadPool(testCfg.threadGrpNum);
 
         int keyCntr = 0;

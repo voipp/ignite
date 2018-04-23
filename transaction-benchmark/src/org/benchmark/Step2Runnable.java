@@ -2,9 +2,11 @@ package org.benchmark;
 
 import java.util.concurrent.BlockingQueue;
 import org.apache.ignite.IgniteCache;
-import org.apache.ignite.internal.util.lang.GridTuple3;
+import org.apache.ignite.internal.util.lang.GridTuple6;
 import org.apache.ignite.transactions.Transaction;
 import org.apache.log4j.Logger;
+
+import static org.apache.ignite.transactions.TransactionState.SUSPENDED;
 
 /*
  * Suspend-resume scenario second step.
@@ -13,9 +15,9 @@ public class Step2Runnable implements Runnable {
     /** Logger. */
     private final Logger log;
     /** Input queue. */
-    private BlockingQueue<GridTuple3<Transaction, Integer, Long>> inputQueue;
+    private BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> inputQueue;
     /** Output queue. */
-    private BlockingQueue<GridTuple3<Transaction, Integer, Long>> outputQueue;
+    private BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> outputQueue;
     /** Cache. */
     private IgniteCache<Integer, CacheValueHolder> cache;
 
@@ -26,8 +28,8 @@ public class Step2Runnable implements Runnable {
      * @param log Logger.
      */
     public Step2Runnable(
-        BlockingQueue<GridTuple3<Transaction, Integer, Long>> inputQueue,
-        BlockingQueue<GridTuple3<Transaction, Integer, Long>> outputQueue,
+        BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> inputQueue,
+        BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> outputQueue,
         IgniteCache<Integer, CacheValueHolder> cache,
         Logger log) {
 
@@ -43,7 +45,8 @@ public class Step2Runnable implements Runnable {
 
         try {
             while (true) {
-                GridTuple3<Transaction, Integer, Long> inputData = inputQueue.take();
+                //tx, key, start-time, suspend-time, resume-time, total-time
+                GridTuple6<Transaction, Integer, Long, Long, Long, Long> inputData = inputQueue.take();
 
                 tx = inputData.get1();
 
@@ -65,23 +68,25 @@ public class Step2Runnable implements Runnable {
 
                 txSuspendTime = System.nanoTime() - txSuspendTime;
 
-                GridTuple3<Transaction, Integer, Long> outputData = new GridTuple3<>(tx, inputData.get2(),
-                    System.nanoTime() - totalTime + inputData.get3());
+                inputData.set6(System.nanoTime() - totalTime + inputData.get6());//total time
+                inputData.set5(txResumeTime);//resume time
+                inputData.set4(txSuspendTime + inputData.get4());//suspend time
 
-                log.debug(
-                    "TxSuspendTime=" + txSuspendTime
-                        + "\nTxResumeTime=" + txResumeTime
-                );
-
-                outputQueue.add(outputData);
+                //tx, key, start-time, suspend-time, resume-time, total-time
+                outputQueue.put(inputData);
             }
         }
-        catch (InterruptedException e) {
-            //No-op.
+        catch (Throwable t) {
+            if (!(t instanceof InterruptedException))
+                log.error("Exception while transaction is in progress", t);
         }
         finally {
-            if (tx != null)
+            if (tx != null) {
+                if (SUSPENDED.equals(tx.state()))
+                    tx.resume();
+
                 tx.close();
+            }
         }
     }
 }
