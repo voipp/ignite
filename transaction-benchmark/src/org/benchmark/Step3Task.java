@@ -11,9 +11,7 @@ import static org.apache.ignite.transactions.TransactionState.SUSPENDED;
 /*
  * Suspend-resume scenario third step.
  */
-public class Step3Runnable implements Runnable {
-    /** Logger. */
-    private final Logger log;
+public class Step3Task extends Task {
     /** Input queue. */
     private BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> inputQueue;
     /** Output queue. */
@@ -27,16 +25,16 @@ public class Step3Runnable implements Runnable {
      * @param cache Cache.
      * @param log Logger.
      */
-    public Step3Runnable(
+    public Step3Task(
         BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> inputQueue,
         BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> outputQueue,
         IgniteCache<Integer, CacheValueHolder> cache,
         Logger log) {
+        super(log);
 
         this.inputQueue = inputQueue;
         this.outputQueue = outputQueue;
         this.cache = cache;
-        this.log = log;
     }
 
     /** {@inheritDoc} */
@@ -44,7 +42,7 @@ public class Step3Runnable implements Runnable {
         Transaction tx = null;
 
         try {
-            while (true) {
+            while (active) {
                 //tx, key, start-time, suspend-time, resume-time, total-time
                 GridTuple6<Transaction, Integer, Long, Long, Long, Long> inputData = inputQueue.take();
 
@@ -74,6 +72,8 @@ public class Step3Runnable implements Runnable {
 
                 //tx, key, start-time, suspend-time, resume-time, total-time
                 outputQueue.put(inputData);
+
+                tx = null;
             }
         }
         catch (Throwable t) {

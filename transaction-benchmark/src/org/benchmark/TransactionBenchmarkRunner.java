@@ -24,6 +24,7 @@ import org.apache.ignite.transactions.TransactionConcurrency;
 import org.apache.ignite.transactions.TransactionIsolation;
 import org.apache.log4j.Logger;
 
+import static org.apache.ignite.transactions.TransactionState.*;
 import static org.benchmark.TestConfiguration.*;
 
 /**
@@ -225,26 +226,70 @@ public class TransactionBenchmarkRunner {
         LinkedBlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> step4Queue = new LinkedBlockingQueue<>(testCfg.queueSize);
         ExecutorService step4Executor = Executors.newFixedThreadPool(testCfg.threadGrpNum);
 
+        List<Task> tasks = new ArrayList<>();
+
         int keyCntr = 0;
 
         for (Integer i = 0; i < testCfg.threadGrpNum; i++) {
-            ((ExecutorService)step4Executor).submit(new Step4Runnable(step4Queue, cache, log));
-            ((ExecutorService)step3Executor).submit(new Step3Runnable(step3Queue, step4Queue, cache, log));
-            ((ExecutorService)step2Executor).submit(new Step2Runnable(step2Queue, step3Queue, cache, log));
-            ((ExecutorService)step1Executor).submit(new Step1Runnable(step2Queue, cache, log, client, testCfg, keyCntr, testCfg.keysNumbPerGrp));
+            Step4Task task4 = new Step4Task(step4Queue, cache, log);
+            ((ExecutorService)step4Executor).submit(task4);
+            tasks.add(task4);
+
+            Step3Task task3 = new Step3Task(step3Queue, step4Queue, cache, log);
+            ((ExecutorService)step3Executor).submit(task3);
+            tasks.add(task3);
+
+            Step2Task task2 = new Step2Task(step2Queue, step3Queue, cache, log);
+            ((ExecutorService)step2Executor).submit(task2);
+            tasks.add(task2);
+
+            Step1Task task1 = new Step1Task(step2Queue, cache, log, client, testCfg, keyCntr, testCfg.keysNumbPerGrp);
+            ((ExecutorService)step1Executor).submit(task1);
+            tasks.add(task1);
 
             keyCntr += testCfg.keysNumbPerGrp;
         }
 
         step4Executor.shutdown();
+        step3Executor.shutdown();
+        step2Executor.shutdown();
+        step1Executor.shutdown();
 
         step4Executor.awaitTermination(testCfg.testTime + testCfg.warmupTime, TimeUnit.SECONDS);
 
-        step4Executor.shutdownNow();
+        tasks.forEach(Task::stop);
 
+        Thread.sleep(1_000);
+
+        step4Executor.shutdownNow();
         step3Executor.shutdownNow();
         step2Executor.shutdownNow();
         step1Executor.shutdownNow();
+
+        step2Queue.forEach( entry -> {
+            Transaction transaction = entry.get1();
+
+            if (SUSPENDED.equals(transaction.state()))
+                transaction.resume();
+
+            transaction.close();
+        });
+        step3Queue.forEach( entry -> {
+            Transaction transaction = entry.get1();
+
+            if (SUSPENDED.equals(transaction.state()))
+                transaction.resume();
+
+            transaction.close();
+        });
+        step4Queue.forEach( entry -> {
+            Transaction transaction = entry.get1();
+
+            if (SUSPENDED.equals(transaction.state()))
+                transaction.resume();
+
+            transaction.close();
+        });
 
         checkAllTransactionsHaveFinished(client);
 

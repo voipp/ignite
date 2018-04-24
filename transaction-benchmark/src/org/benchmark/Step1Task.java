@@ -13,13 +13,11 @@ import static org.apache.ignite.transactions.TransactionState.SUSPENDED;
 /*
  * Suspend-resume scenario first step.
  */
-public class Step1Runnable implements Runnable {
+public class Step1Task extends Task {
     /** Ignite. */
     private final Ignite ignite;
     /** Test config. */
     private final TestConfiguration testCfg;
-    /** Logger. */
-    private final Logger log;
     /** Output queue. */
     private BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> outputQueue;
     /** Cache. */
@@ -38,7 +36,7 @@ public class Step1Runnable implements Runnable {
      * @param originKey originKey.
      * @param keysNumbPerGrp keys number per group.
      */
-    public Step1Runnable(
+    public Step1Task(
         BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> outputQueue,
         IgniteCache<Integer, CacheValueHolder> cache,
         Logger log,
@@ -46,12 +44,12 @@ public class Step1Runnable implements Runnable {
         TestConfiguration testCfg,
         int originKey,
         int keysNumbPerGrp) {
+        super(log);
 
         this.outputQueue = outputQueue;
         this.cache = cache;
         this.ignite = ignite;
         this.testCfg = testCfg;
-        this.log = log;
         this.originKey = originKey;
         this.keysNumbPerGrp = keysNumbPerGrp;
     }
@@ -61,7 +59,7 @@ public class Step1Runnable implements Runnable {
         Transaction tx = null;
 
         try {
-            while (true) {
+            while (active) {
                 int key = ThreadLocalRandom.current().nextInt(originKey, originKey + keysNumbPerGrp);
 
                 long totalTime = System.nanoTime();
@@ -84,6 +82,8 @@ public class Step1Runnable implements Runnable {
 
                 //tx, key, start-time, suspend-time, resume-time, total-time
                 outputQueue.put(new GridTuple6(tx, key, txStartTime, txSuspendTime, 0, System.nanoTime() - totalTime));
+
+                tx = null;
             }
         }
         catch (Throwable t) {

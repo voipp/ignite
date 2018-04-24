@@ -6,33 +6,35 @@ import org.apache.ignite.internal.util.lang.GridTuple6;
 import org.apache.ignite.transactions.Transaction;
 import org.apache.log4j.Logger;
 
-import static org.apache.ignite.transactions.TransactionState.*;
+import static org.apache.ignite.transactions.TransactionState.SUSPENDED;
 
 /*
- * Suspend-resume scenario fourth step.
+ * Suspend-resume scenario second step.
  */
-public class Step4Runnable implements Runnable {
-    /** Logger. */
-    private final Logger log;
+public class Step2Task extends Task {
     /** Input queue. */
     private BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> inputQueue;
+    /** Output queue. */
+    private BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> outputQueue;
     /** Cache. */
     private IgniteCache<Integer, CacheValueHolder> cache;
 
     /**
      * @param inputQueue Input queue.
+     * @param outputQueue Output queue.
      * @param cache Cache.
      * @param log Logger.
      */
-    public Step4Runnable(
+    public Step2Task(
         BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> inputQueue,
+        BlockingQueue<GridTuple6<Transaction, Integer, Long, Long, Long, Long>> outputQueue,
         IgniteCache<Integer, CacheValueHolder> cache,
-        Logger log
-    ) {
+        Logger log) {
+        super(log);
 
         this.inputQueue = inputQueue;
+        this.outputQueue = outputQueue;
         this.cache = cache;
-        this.log = log;
     }
 
     /** {@inheritDoc} */
@@ -40,7 +42,7 @@ public class Step4Runnable implements Runnable {
         Transaction tx = null;
 
         try {
-            while (true) {
+            while (active) {
                 //tx, key, start-time, suspend-time, resume-time, total-time
                 GridTuple6<Transaction, Integer, Long, Long, Long, Long> inputData = inputQueue.take();
 
@@ -50,29 +52,28 @@ public class Step4Runnable implements Runnable {
 
                 tx.resume();
 
-                long txResumeTime = System.nanoTime() - totalTime + inputData.get5();
+                long txResumeTime = System.nanoTime() - totalTime;
 
                 CacheValueHolder val = cache.get(inputData.get2());
 
-                val.val /= 4;
+                val.val /= 2;
 
                 cache.put(inputData.get2(), val);
 
-                long txCommitTime = System.nanoTime();
+                long txSuspendTime = System.nanoTime();
 
-                tx.commit();
+                tx.suspend();
 
-                txCommitTime = System.nanoTime() - txCommitTime;
+                txSuspendTime = System.nanoTime() - txSuspendTime;
 
-                totalTime = System.nanoTime() - totalTime + inputData.get6();
+                inputData.set6(System.nanoTime() - totalTime + inputData.get6());//total time
+                inputData.set5(txResumeTime);//resume time
+                inputData.set4(txSuspendTime + inputData.get4());//suspend time
 
-                log.debug(
-                    inputData.get3() + // tx start time
-                        "," + inputData.get4() / 3 + // tx suspend time
-                        "," + txResumeTime / 3 + // tx resume time
-                        "," + txCommitTime + // tx commit time
-                        "," + totalTime // tx total time
-                );
+                //tx, key, start-time, suspend-time, resume-time, total-time
+                outputQueue.put(inputData);
+
+                tx = null;
             }
         }
         catch (Throwable t) {
@@ -85,7 +86,6 @@ public class Step4Runnable implements Runnable {
                     tx.resume();
 
                 tx.close();
-
             }
         }
     }
