@@ -21,7 +21,6 @@
     <Appenders>
         <Console name="CONSOLE" target="SYSTEM_OUT">
             <PatternLayout pattern="[%d{ISO8601}][%-5p][%t][%c{1}]%notEmpty{[%markerSimpleName]} %m%n"/>
-            <ThresholdFilter level="ERROR" onMatch="DENY" onMismatch="ACCEPT"/>
         </Console>
 
         <Console name="CONSOLE_ERR" target="SYSTEM_ERR">
@@ -43,13 +42,17 @@
             </Routes>
         </Routing>
     </Appenders>
-
+	
+	<category name="org.apache.ignite.internal.processors.cache.distributed.dht.GridDhtLocalPartition">
+        <level value="DEBUG"/>
+		<appender-ref ref="CONSOLE"/>
+    </category>
+	
     <Loggers>
         <Logger name="org" level="INFO"/>
         <Logger name="org.eclipse.jetty" level="INFO"/>
 
         <Root level="INFO">
-            <AppenderRef ref="CONSOLE" level="DEBUG"/>
             <AppenderRef ref="CONSOLE_ERR" level="WARN"/>
             <AppenderRef ref="FILE" level="DEBUG"/>
         </Root>

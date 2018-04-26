@@ -105,6 +105,11 @@
         <level value="INFO"/>
     </category>
 
+	<category name="org.apache.ignite.internal.processors.cache.distributed.dht.GridDhtLocalPartition">
+        <level value="DEBUG"/>
+		<appender-ref ref="CONSOLE"/>
+    </category>
+	
     <!-- Default settings. -->
     <root>
         <!-- Print at info by default. -->

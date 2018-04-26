@@ -91,7 +91,7 @@ public class SimpleTransaction extends GridCacheAbstractSelfTest {
 
     @Override
     protected int gridCount() {
-        return 3;
+        return 1;
     }
 
     @Override
@@ -147,18 +147,16 @@ public class SimpleTransaction extends GridCacheAbstractSelfTest {
 
         CacheConfiguration configuration = defaultCacheConfiguration();
         configuration.setBackups(1);
-        //configuration.setAffinity(new DummyAffinity());
+        configuration.setAffinity(new DummyAffinity());
         configuration.setRebalanceMode(CacheRebalanceMode.SYNC);
         configuration.setWriteSynchronizationMode(CacheWriteSynchronizationMode.FULL_SYNC);
-        configuration.setCacheStoreFactory(new StoreFactory());
-        configuration.setWriteThrough(true);
-        configuration.setReadThrough(true);
-        configuration.setWriteBehindEnabled(true);
+        //configuration.setCacheStoreFactory(new StoreFactory());
+        //configuration.setWriteThrough(true);
+        //configuration.setReadThrough(true);
+        //configuration.setWriteBehindEnabled(true);
 
         config.setCacheConfiguration(configuration);
         config.setDiscoverySpi(new TcpDiscoverySpi());
-
-
 
         ((TcpDiscoverySpi)config.getDiscoverySpi()).setIpFinder(IP_FINDER);
 
@@ -184,20 +182,22 @@ public class SimpleTransaction extends GridCacheAbstractSelfTest {
         awaitPartitionMapExchange();
 
         for (int i : grid(0).affinity(DEFAULT_CACHE_NAME).primaryPartitions(grid(0).localNode()))
-            System.out.println("[txs]partition on 0 grid " + i);
+            System.out.println("[xchg]partition on 0 grid " + i);
 
         IgniteEx grid2 = startGrid(1);
 
         awaitPartitionMapExchange();
 
         for (int i : grid(0).affinity(DEFAULT_CACHE_NAME).primaryPartitions(grid(0).localNode()))
-            System.out.println("[txs]partition on 0 grid " + i);
+            System.out.println("[xchg]partition on 0 grid " + i);
 
         for (int i : grid(0).affinity(DEFAULT_CACHE_NAME).primaryPartitions(grid(1).localNode()))
-            System.out.println("[txs]partition on 1 grid " + i);
+            System.out.println("[xchg]partition on 1 grid " + i);
 
         assertEquals(1, grid(0).cache(DEFAULT_CACHE_NAME).localSize(CachePeekMode.PRIMARY));
         assertEquals(1, grid(1).cache(DEFAULT_CACHE_NAME).localSize(CachePeekMode.PRIMARY));
+
+        System.out.println("closing caches");
     }
 
     @Override protected long getTestTimeout() {
@@ -346,8 +346,6 @@ public class SimpleTransaction extends GridCacheAbstractSelfTest {
         } else if(ignite2.cluster().localNode().id().equals(backupNode.id())){
             backupIgnite = ignite2;
         }
-
-        GridCacheMvccCandidate.startDumping = false;
 
         Transaction tx = otherTransactions.txStart();
 

@@ -98,6 +98,10 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
     /** Static logger to avoid re-creation. */
     private static final AtomicReference<IgniteLogger> logRef = new AtomicReference<>();
 
+    /** */
+    @GridToStringExclude
+    private CacheGroupContext grp = null;
+
     /** Logger. */
     private static volatile IgniteLogger log;
 
@@ -106,7 +110,35 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
 
     /** State. 32 bits - size, 16 bits - reservations, 13 bits - reserved, 3 bits - GridDhtPartitionState. */
     @GridToStringExclude
-    private final AtomicLong state = new AtomicLong((long)MOVING.ordinal() << 32);
+    private final AtomicLong0 state = new AtomicLong0((long)MOVING.ordinal() << 32);
+
+    public class AtomicLong0 extends AtomicLong {
+
+        public AtomicLong0(long initialValue) {
+            super(initialValue);
+        }
+
+        public boolean compareAndSet0(long expect, long update) {
+            if (compareAndSet(expect, update)) {
+                if (grp.cacheOrGroupName().equals("default"))
+                    U.dumpStack("Setting part state. Expected value= " + getPartState(expect)
+                        + ", updated value= " + getPartState(update)
+                        + ", partition id= " + id());
+
+                return true;
+            }
+            return false;
+        }
+
+        public void set0(long val) {
+            if (grp.cacheOrGroupName().equals("default"))
+                U.dumpStack("Setting part state. Old value= " + getPartState(get())
+                    + ", updated value= " + getPartState(val)
+                    + ", partition id= " + id());
+
+            set(val);
+        }
+    }
 
     /** Evict guard. Must be CASed to -1 only when partition state is EVICTED. */
     @GridToStringExclude
@@ -123,10 +155,6 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
     /** */
     @GridToStringExclude
     private final GridCacheSharedContext ctx;
-
-    /** */
-    @GridToStringExclude
-    private final CacheGroupContext grp;
 
     /** Create time. */
     @GridToStringExclude
@@ -451,7 +479,7 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
 
             long newState = setReservations(state, getReservations(state) + 1);
 
-            if (this.state.compareAndSet(state, newState))
+            if (this.state.compareAndSet0(state, newState))
                 return true;
         }
     }
@@ -491,7 +519,7 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
             assert getSize(newState) == getSize(state) + sizeChange;
 
             // Decrement reservations.
-            if (this.state.compareAndSet(state, newState)) {
+            if (this.state.compareAndSet0(state, newState)) {
                 // If no more reservations try to continue delayed renting or clearing process.
                 if (reservations == 0) {
                     if (delayedRenting)
@@ -509,7 +537,7 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
      * @param stateToRestore State to restore.
      */
     public void restoreState(GridDhtPartitionState stateToRestore) {
-        state.set(setPartState(state.get(),stateToRestore));
+        state.set0(setPartState(state.get(),stateToRestore));
     }
 
     /**
@@ -520,7 +548,7 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
     private boolean casState(long state, GridDhtPartitionState toState) {
         if (grp.persistenceEnabled() && grp.walEnabled()) {
             synchronized (this) {
-                boolean update = this.state.compareAndSet(state, setPartState(state, toState));
+                boolean update = this.state.compareAndSet0(state, setPartState(state, toState));
 
                 if (update)
                     try {
@@ -534,7 +562,7 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
             }
         }
         else
-            return this.state.compareAndSet(state, setPartState(state, toState));
+            return this.state.compareAndSet0(state, setPartState(state, toState));
     }
 
     /**
@@ -557,6 +585,9 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
             if (casState(state, OWNING)) {
                 if (log.isDebugEnabled())
                     log.debug("Owned partition: " + this);
+
+                if (grp.cacheOrGroupName().equals("default"))
+                    U.dumpStack("[xchg]Owned partition. id=" + id + ". Local node id=" + ctx.localNodeId());
 
                 return true;
             }
@@ -627,6 +658,9 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
 
             if (log.isDebugEnabled())
                 log.debug("Moved partition to RENTING state: " + this);
+
+            if(grp.cacheOrGroupName().equals("default"))
+                U.dumpStack("[xchg]Moved part to RENTING. id=" + id + ". Local node id=" + ctx.localNodeId());
 
             // Evict asynchronously, as the 'rent' method may be called
             // from within write locks on local partition.
@@ -779,6 +813,9 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
             if (log.isDebugEnabled())
                 log.debug("Evicted partition: " + this);
 
+            if (grp.cacheOrGroupName().equals("default"))
+                U.dumpStack("[xchg]Evicted partition. id=" + id + ". Local node id=" + ctx.localNodeId());
+
             updateSeqOnDestroy = updateSeq;
         }
     }
@@ -853,6 +890,10 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
 
                 if (log.isDebugEnabled())
                     log.debug("Partition is cleared [clearedEntities=" + clearedEntities + ", part=" + this + "]");
+
+                if (grp.cacheOrGroupName().equals("default"))
+                    U.dumpStack("[xchg]Cleared partition. id=" + id + ". Local node id=" + ctx.localNodeId());
+
             }
             catch (NodeStoppingException e) {
                 clearFuture.finish(e);
@@ -1176,7 +1217,7 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
         while (true) {
             long state = this.state.get();
 
-            if (this.state.compareAndSet(state, setSize(state, getSize(state) + 1)))
+            if (this.state.compareAndSet0(state, setSize(state, getSize(state) + 1)))
                 return;
         }
     }
@@ -1195,7 +1236,7 @@ public class GridDhtLocalPartition extends GridCacheConcurrentMapImpl implements
 
             assert getPartState(state) != EVICTED;
 
-            if (this.state.compareAndSet(state, setSize(state, getSize(state) - 1)))
+            if (this.state.compareAndSet0(state, setSize(state, getSize(state) - 1)))
                 return;
         }
     }
