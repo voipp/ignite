@@ -111,7 +111,10 @@ public class IgniteTxStateImpl extends IgniteTxLocalStateAdapter {
         for (int i = 0; i < activeCacheIds.size(); i++) {
             int cacheId = activeCacheIds.get(i);
 
-            cctx.cacheContext(cacheId).cache().awaitLastFut();
+            GridCacheContext ctx = cctx.cacheContext(cacheId);
+
+            if (ctx != null)
+                ctx.cache().awaitLastFut();
         }
     }
 

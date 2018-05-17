@@ -323,6 +323,9 @@ public class IgniteTxManager extends GridCacheSharedManagerAdapter {
                 if (entry.cacheId() == cacheId) {
                     rollbackTx(tx, false, false);
 
+                    tx.state(ROLLING_BACK);
+                    tx.state(ROLLED_BACK);
+
                     break;
                 }
             }
